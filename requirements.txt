@@ -1,4 +1,4 @@
-# Pinned to the versions currently deployed to the workout-api Lambda.
+# Pinned to the versions currently deployed to the wield-steel-backend Lambda.
 boto3==1.43.118
 botocore==1.43.118
 s3transfer==0.19.3

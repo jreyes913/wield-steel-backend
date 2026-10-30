@@ -1,6 +1,6 @@
-# workout-api
+# wield-steel-backend
 
-Workout Tracker API: a single AWS Lambda (`workout-api`, Python 3.13, x86_64, us-east-2)
+Workout Tracker API: a single AWS Lambda (`wield-steel-backend`, Python 3.13, x86_64, us-east-2)
 behind API Gateway (HTTP API, Cognito auth), backed by Aurora DSQL.
 See the docstring at the top of `lambda_function.py` for the endpoint list.
 
@@ -9,7 +9,7 @@ See the docstring at the top of `lambda_function.py` for the endpoint list.
 - `lambda_function.py` — Lambda entry point (handler: `lambda_function.handler`); re-exports `src.app.handler`
 - `src/` — the API package (routes, auth, database, validation)
 - `requirements.txt` — pinned dependencies, bundled into the deployment zip
-- `deploy.sh` — builds `build/workout-api.zip` and uploads it to Lambda
+- `deploy.sh` — builds `build/wield-steel-backend.zip` and uploads it to Lambda
 
 ## Deploy
 

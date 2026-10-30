@@ -2,12 +2,12 @@
 # Build the Lambda zip from lambda_function.py + requirements.txt and upload it.
 #
 #   ./deploy.sh            build and deploy
-#   ./deploy.sh --build    build only (writes build/workout-api.zip)
+#   ./deploy.sh --build    build only (writes build/wield-steel-backend.zip)
 #
 # Uses whatever AWS credentials the CLI already has (e.g. `aws login`).
 set -euo pipefail
 
-FUNCTION_NAME="${FUNCTION_NAME:-workout-api}"
+FUNCTION_NAME="${FUNCTION_NAME:-wield-steel-backend}"
 REGION="${AWS_REGION:-us-east-2}"
 # Must match the Lambda's runtime and architecture.
 PY_VERSION="3.13"
@@ -26,15 +26,15 @@ python3 -m pip install --quiet --upgrade \
 cp -r lambda_function.py src build/package/
 rm -rf build/package/bin
 find build/package -name __pycache__ -type d -prune -exec rm -rf {} +
-python3 -c 'import shutil; shutil.make_archive("build/workout-api", "zip", "build/package")'
-echo "Built build/workout-api.zip ($(du -h build/workout-api.zip | cut -f1))"
+python3 -c 'import shutil; shutil.make_archive("build/wield-steel-backend", "zip", "build/package")'
+echo "Built build/wield-steel-backend.zip ($(du -h build/wield-steel-backend.zip | cut -f1))"
 
 [[ "${1:-}" == "--build" ]] && exit 0
 
 aws lambda update-function-code \
   --region "$REGION" \
   --function-name "$FUNCTION_NAME" \
-  --zip-file fileb://build/workout-api.zip \
+  --zip-file fileb://build/wield-steel-backend.zip \
   --query '{Function:FunctionName,Modified:LastModified,Sha256:CodeSha256}' \
   --output table
 aws lambda wait function-updated --region "$REGION" --function-name "$FUNCTION_NAME"
