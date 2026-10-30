@@ -23,7 +23,7 @@ python3 -m pip install --quiet --upgrade \
   --platform "$PLATFORM" --python-version "$PY_VERSION" \
   --implementation cp --only-binary=:all:
 
-cp lambda_function.py build/package/
+cp -r lambda_function.py src build/package/
 rm -rf build/package/bin
 find build/package -name __pycache__ -type d -prune -exec rm -rf {} +
 python3 -c 'import shutil; shutil.make_archive("build/workout-api", "zip", "build/package")'

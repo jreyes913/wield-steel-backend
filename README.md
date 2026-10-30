@@ -6,7 +6,8 @@ See the docstring at the top of `lambda_function.py` for the endpoint list.
 
 ## Layout
 
-- `lambda_function.py` — the whole API (handler: `lambda_function.handler`)
+- `lambda_function.py` — Lambda entry point (handler: `lambda_function.handler`); re-exports `src.app.handler`
+- `src/` — the API package (routes, auth, database, validation)
 - `requirements.txt` — pinned dependencies, bundled into the deployment zip
 - `deploy.sh` — builds `build/workout-api.zip` and uploads it to Lambda
 
