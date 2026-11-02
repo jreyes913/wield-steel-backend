@@ -172,7 +172,7 @@ def send_request(req):
 
     def work(tx: Tx):
         found = tx.query(
-            f"SELECT {PUBLIC_PROFILE_COLUMNS} FROM workout.athlete WHERE username = :username",
+            f"SELECT {PUBLIC_PROFILE_COLUMNS} FROM workout.athlete WHERE lower(username) = lower(:username)",
             username=username,
         )
         if not found:
@@ -310,7 +310,7 @@ def block_by_username(req):
     body = req["body"]
     require_fields(body, "username")
     username = to_text(body["username"], "username")
-    found = query("SELECT id FROM workout.athlete WHERE username = :username", username=username)
+    found = query("SELECT id FROM workout.athlete WHERE lower(username) = lower(:username)", username=username)
     if not found:
         raise HttpError(404, "No athlete with that username")
     return respond(200, {"athlete": _block(me, found[0]["id"])})

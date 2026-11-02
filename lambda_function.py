@@ -17,7 +17,8 @@ Endpoints
 ---------
 Profile
     GET    /me                          your profile (created on first call)
-    PUT    /me                          {first_name?, last_name?, dob?, gender?, height?}
+    PUT    /me                          {username?, first_name?, last_name?, dob?, gender?, height?}
+                                        username: 3-30 of a-z 0-9 . _ - (stored lowercase), unique, else 409
 
 Reference data (shared by everyone)
     GET    /muscle-groups

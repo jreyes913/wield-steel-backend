@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from typing import Any, Callable
 
@@ -46,6 +47,14 @@ def to_text(value: Any, field: str = "value") -> str:
     if not isinstance(value, str) or not value.strip():
         raise HttpError(400, f"{field} must be non-empty text")
     return value.strip()
+
+
+def to_username(value: Any, field: str = "username") -> str:
+    """A username: 3 to 30 letters, digits, dots, underscores or hyphens. Returned lowercase."""
+    text = to_text(value, field).lower()
+    if not re.fullmatch(r"[a-z0-9._-]{3,30}", text):
+        raise HttpError(400, f"{field} must be 3 to 30 letters, numbers, dots, underscores or hyphens")
+    return text
 
 
 def optional(convert: Callable, value: Any, field: str):
