@@ -1,6 +1,6 @@
 """The route table: METHOD + path pattern -> handler(req).
 
-{id} captures a number from the URL. To add an endpoint, write a
+ROUTES holds (method, compiled regex, handler, pattern). {id} captures a number from the URL. To add an endpoint, write a
 handler(req) in the matching module and add one line here.
 """
 
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 
-from . import friends, lifts, profile, programs, progress, reference
+from . import account, friends, lifts, profile, programs, progress, reference
 
 
 def _compile(pattern: str) -> re.Pattern:
@@ -19,6 +19,8 @@ _ROUTES = [
     # Profile
     ("GET",    "/me",                         profile.get_me),
     ("PUT",    "/me",                         profile.update_me),
+    ("GET",    "/me/export",                  account.export_me),
+    ("DELETE", "/me",                         account.delete_me),
     # Reference data
     ("GET",    "/muscle-groups",              reference.list_muscle_groups),
     ("GET",    "/exercises",                  reference.list_exercises),
@@ -73,4 +75,4 @@ _ROUTES = [
     ("PUT",    "/blocks/{id}",                friends.block_athlete),
     ("DELETE", "/blocks/{id}",                friends.unblock_athlete),
 ]
-ROUTES = [(method, _compile(path), fn) for method, path, fn in _ROUTES]
+ROUTES = [(method, _compile(path), fn, path) for method, path, fn in _ROUTES]

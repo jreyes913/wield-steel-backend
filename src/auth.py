@@ -57,6 +57,11 @@ def current_athlete_id(claims: dict) -> int:
     return rows[0]["id"]
 
 
+def forget_athlete(sub: str) -> None:
+    """Drop the cached athlete id for a Cognito user (used when an account is deleted)."""
+    _athlete_cache.pop(sub, None)
+
+
 def _owned(sql: str, row_id: int, me: int, label: str, db: Tx | None) -> dict:
     rows = runner(db)(sql, id=row_id, me=me)
     if not rows:

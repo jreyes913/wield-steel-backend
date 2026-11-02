@@ -14,6 +14,7 @@ from typing import Any, Callable
 import boto3
 import pg8000.native as pg
 
+from .logs import log_event
 from .config import AWS_REGION, DSQL_ENDPOINT, MAX_CONN_AGE_SECONDS, SERIALIZATION_FAILURE
 
 _dsql = boto3.client("dsql", region_name=AWS_REGION)
@@ -22,18 +23,23 @@ _conn_opened_at = 0.0
 
 
 def _connect() -> pg.Connection:
-    token = _dsql.generate_db_connect_admin_auth_token(
-        Hostname=DSQL_ENDPOINT, Region=AWS_REGION
-    )
-    return pg.Connection(
-        user="admin",
-        password=token,
-        host=DSQL_ENDPOINT,
-        port=5432,
-        database="postgres",
-        ssl_context=ssl.create_default_context(),
-        timeout=10,
-    )
+    try:
+        token = _dsql.generate_db_connect_admin_auth_token(
+            Hostname=DSQL_ENDPOINT, Region=AWS_REGION
+        )
+        return pg.Connection(
+            user="admin",
+            password=token,
+            host=DSQL_ENDPOINT,
+            port=5432,
+            database="postgres",
+            ssl_context=ssl.create_default_context(),
+            timeout=10,
+        )
+    except Exception as err:
+        # A CloudWatch metric filter counts these lines (see README, "Monitoring").
+        log_event("dsql_connect_failed", error=type(err).__name__)
+        raise
 
 
 def get_conn() -> pg.Connection:

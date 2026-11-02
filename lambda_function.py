@@ -4,6 +4,8 @@ Runs behind API Gateway (HTTP API) and talks to Aurora DSQL.
 
 Environment variables (set in the Lambda console):
     DSQL_ENDPOINT   e.g. abc123.dsql.us-east-2.on.aws
+    COGNITO_USER_POOL_ID   e.g. us-east-2_LAaNM8OAn (DELETE /me removes the sign-in; the
+                    role needs cognito-idp:AdminDeleteUser on that pool)
     AWS_REGION      set automatically by Lambda
 
 Every request must come through API Gateway with a valid Cognito login.
@@ -19,6 +21,12 @@ Profile
     GET    /me                          your profile (created on first call)
     PUT    /me                          {username?, first_name?, last_name?, dob?, gender?, height?}
                                         username: 3-30 of a-z 0-9 . _ - (stored lowercase), unique, else 409
+    GET    /me/export                   everything you own as JSON (profile, lifts, programs,
+                                        friend and blocked usernames); never cognito_sub
+    DELETE /me                          {confirm: "<your username>"}  deletes your lifts, programs,
+                                        friendships, profile and sign-in. 400 if confirm is wrong;
+                                        200 {done: true} when finished, 202 {done: false} when the
+                                        time budget ran out (send the same request again)
 
 Reference data (shared by everyone)
     GET    /muscle-groups
@@ -83,6 +91,14 @@ Blocking. A block removes any friendship or request, and the blocked athlete jus
     PUT    /blocks/{id}                 block athlete id (no-op if already blocked)
     DELETE /blocks/{id}                 unblock
 
+Limits and logging
+------------------
+Per athlete, at most 20 attempts per hour (answered with 429) on: POST /friend-requests,
+POST /blocks and PUT /blocks/{id} (together), POST /exercises, and PUT /me when it sends a
+username. Attempts are rows in workout.rate_limit (see README); if that table doesn't exist
+yet the limit is skipped. Every request logs one JSON line: event, method, route pattern,
+status, athlete_id, duration_ms. Never bodies, emails or tokens.
+
 Notes on Aurora DSQL
 --------------------
 * No foreign keys: parents are checked before inserting children, and
@@ -92,7 +108,9 @@ Notes on Aurora DSQL
 
 Code layout (src/)
 ------------------
-    app.py          handler: auth check, routing, error handling
+    app.py          handler: auth check, routing, rate limits, error handling, request log
+    throttle.py     per-athlete attempt limits (workout.rate_limit)
+    logs.py         log_event(): one JSON object per log line
     routes/         one module per endpoint group, plus the ROUTES table
     auth.py         caller identity, ownership and friendship checks
     db.py           DSQL connection, query(), transaction()
