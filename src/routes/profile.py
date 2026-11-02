@@ -6,6 +6,8 @@ from ..rows import update_row
 from ..validation import to_date, to_int, to_text
 
 PROFILE_COLUMNS = "id, username, first_name, last_name, dob, gender, height"
+# All that anyone else ever sees of an athlete. Never return cognito_sub.
+PUBLIC_PROFILE_COLUMNS = "id, username, first_name, last_name"
 
 
 def get_me(req):

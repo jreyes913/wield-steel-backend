@@ -9,7 +9,9 @@ Environment variables (set in the Lambda console):
 Every request must come through API Gateway with a valid Cognito login.
 The caller's identity is read from the token, never from the request body,
 so a user can only ever see or change their own data. Anything that isn't
-yours returns 404, so other people's IDs aren't revealed.
+yours returns 404, so other people's IDs aren't revealed. The one exception is
+an accepted friend, who can read (never change) your programs and logged lifts,
+and sees only your name and username: never body weight or other profile fields.
 
 Endpoints
 ---------
@@ -56,6 +58,30 @@ Programs (templates). A program has days, days have sets, sets have subsets.
     PUT    /program-subsets/{id}        {exercise_id?, position?, reps?}
     DELETE /program-subsets/{id}
 
+Friends. Needs the workout.friendship table (requester_id, addressee_id, status, created_at,
+updated_at, requester_hides_lifts, addressee_hides_lifts); status may also be 'blocked'.
+A friend's data is read-only; every other athlete's id returns 404.
+    GET    /friends                     [{athlete, since, hide_my_lifts}], by name
+    PUT    /friends/{id}                {hide_my_lifts: true|false}  hide your lifts from this friend
+    DELETE /friends/{id}                remove the friend with athlete id
+    GET    /friend-requests             {incoming: [{athlete, sent_at}], outgoing: [...]}
+    POST   /friend-requests             {username}  -> {status: "pending"|"accepted", athlete}
+    PUT    /friend-requests/{id}        {status: "accepted"|"declined"}  id = the requester's athlete id
+    DELETE /friend-requests/{id}        cancel your outgoing request to athlete id
+    GET    /athletes/{id}               a friend's public profile (id, username, name)
+    GET    /athletes/{id}/lifts         a friend's lifts: id, date
+    GET    /athletes/{id}/lifts/{lift_id}      one lift with sets and subsets, no body weight
+    GET    /athletes/{id}/programs      a friend's programs
+    GET    /athletes/{id}/programs/{program_id}  the full program tree
+    POST   /athletes/{id}/programs/{program_id}/copy   copy it into your own programs (201)
+
+Blocking. A block removes any friendship or request, and the blocked athlete just sees
+"No athlete with that username".
+    GET    /blocks                      [{athlete, since}], newest first
+    POST   /blocks                      {username}  block by exact username
+    PUT    /blocks/{id}                 block athlete id (no-op if already blocked)
+    DELETE /blocks/{id}                 unblock
+
 Notes on Aurora DSQL
 --------------------
 * No foreign keys: parents are checked before inserting children, and
@@ -67,7 +93,7 @@ Code layout (src/)
 ------------------
     app.py          handler: auth check, routing, error handling
     routes/         one module per endpoint group, plus the ROUTES table
-    auth.py         caller identity and ownership checks
+    auth.py         caller identity, ownership and friendship checks
     db.py           DSQL connection, query(), transaction()
     rows.py         assert_exists(), update_row()
     cascade.py      child-first deletes

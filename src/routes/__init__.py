@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 
-from . import lifts, profile, programs, progress, reference
+from . import friends, lifts, profile, programs, progress, reference
 
 
 def _compile(pattern: str) -> re.Pattern:
@@ -54,5 +54,23 @@ _ROUTES = [
     ("POST",   "/program-sets/{id}/subsets",  programs.add_program_subset),
     ("PUT",    "/program-subsets/{id}",       programs.update_program_subset),
     ("DELETE", "/program-subsets/{id}",       programs.delete_program_subset),
+    # Friends
+    ("GET",    "/friends",                    friends.list_friends),
+    ("PUT",    "/friends/{id}",               friends.set_hide_lifts),
+    ("DELETE", "/friends/{id}",               friends.remove_friend),
+    ("GET",    "/friend-requests",            friends.list_requests),
+    ("POST",   "/friend-requests",            friends.send_request),
+    ("PUT",    "/friend-requests/{id}",       friends.answer_request),
+    ("DELETE", "/friend-requests/{id}",       friends.cancel_request),
+    ("GET",    "/athletes/{id}",              friends.get_friend),
+    ("GET",    "/athletes/{id}/lifts",        friends.list_friend_lifts),
+    ("GET",    "/athletes/{id}/lifts/{lift_id}", friends.get_friend_lift),
+    ("GET",    "/athletes/{id}/programs",     friends.list_friend_programs),
+    ("GET",    "/athletes/{id}/programs/{program_id}", friends.get_friend_program),
+    ("POST",   "/athletes/{id}/programs/{program_id}/copy", friends.copy_friend_program),
+    ("GET",    "/blocks",                     friends.list_blocks),
+    ("POST",   "/blocks",                     friends.block_by_username),
+    ("PUT",    "/blocks/{id}",                friends.block_athlete),
+    ("DELETE", "/blocks/{id}",                friends.unblock_athlete),
 ]
 ROUTES = [(method, _compile(path), fn) for method, path, fn in _ROUTES]
