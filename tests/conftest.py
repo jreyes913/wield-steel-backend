@@ -14,6 +14,7 @@ import sqlite3
 from datetime import date, datetime
 
 import pytest
+from botocore.exceptions import ClientError
 
 # boto3 clients are created when src is imported; dummy credentials keep that offline.
 os.environ.setdefault("AWS_ACCESS_KEY_ID", "test")
@@ -76,6 +77,12 @@ class FakeCognito:
     def __init__(self):
         self.deleted: list[str] = []
         self.error: Exception | None = None
+        self.gone: set[str] = set()  # usernames Cognito no longer knows
+
+    def admin_get_user(self, UserPoolId, Username):
+        if Username in self.gone:
+            raise ClientError({"Error": {"Code": "UserNotFoundException"}}, "AdminGetUser")
+        return {"Username": Username}
 
     def admin_delete_user(self, UserPoolId, Username):
         if self.error:
@@ -90,6 +97,8 @@ def fake_db(monkeypatch):
     monkeypatch.setattr(auth, "_athlete_cache", {})
     cognito = FakeCognito()
     monkeypatch.setattr("src.routes.account._cognito", cognito)
+    monkeypatch.setattr(auth, "_cognito", cognito)
+    monkeypatch.setattr(auth, "COGNITO_USER_POOL_ID", "pool")
     conn.cognito = cognito
     return conn
 

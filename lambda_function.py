@@ -5,7 +5,12 @@ Runs behind API Gateway (HTTP API) and talks to Aurora DSQL.
 Environment variables (set in the Lambda console):
     DSQL_ENDPOINT   e.g. abc123.dsql.us-east-2.on.aws
     COGNITO_USER_POOL_ID   e.g. us-east-2_LAaNM8OAn (DELETE /me removes the sign-in; the
-                    role needs cognito-idp:AdminDeleteUser on that pool)
+                    role needs cognito-idp:AdminDeleteUser and AdminGetUser on that pool;
+                    a token for a deleted user gets 401 instead of a new empty profile)
+    ORIGIN_SECRET   optional. Value CloudFront sends in the X-Origin-Verify header; a wrong
+                    value gets 403 (OPTIONS is exempt)
+    ORIGIN_SECRET_REQUIRED   "true" to also refuse requests with no such header, which
+                    closes the direct execute-api address
     AWS_REGION      set automatically by Lambda
 
 Every request must come through API Gateway with a valid Cognito login.

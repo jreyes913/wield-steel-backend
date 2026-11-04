@@ -6,6 +6,14 @@ DSQL_ENDPOINT = os.environ.get("DSQL_ENDPOINT", "")
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-2")
 COGNITO_USER_POOL_ID = os.environ.get("COGNITO_USER_POOL_ID", "")
 
+# Shared secret that CloudFront adds to every request it forwards (header below), so calls
+# straight to the execute-api address, which skip the WAF, can be refused. When
+# ORIGIN_SECRET is empty the check is off; when set, a wrong header is always refused and
+# a missing one only when ORIGIN_SECRET_REQUIRED is "true" (lets the rollout be staged).
+ORIGIN_SECRET = os.environ.get("ORIGIN_SECRET", "")
+ORIGIN_SECRET_REQUIRED = os.environ.get("ORIGIN_SECRET_REQUIRED", "").lower() == "true"
+ORIGIN_HEADER = "x-origin-verify"
+
 # DSQL closes connections after 1 hour; recycle well before that.
 MAX_CONN_AGE_SECONDS = 50 * 60
 SERIALIZATION_FAILURE = "40001"  # DSQL optimistic-concurrency conflict -> retry

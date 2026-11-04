@@ -116,3 +116,12 @@ def test_cache_is_cleared_after_delete(make_user):
     assert me.sub in auth._athlete_cache
     me.delete("/me", {"confirm": "me"})
     assert me.sub not in auth._athlete_cache
+
+
+def test_deleted_users_token_does_not_recreate_a_profile(make_user, fake_db, sql):
+    me = make_user("me")
+    me.delete("/me", {"confirm": "me"})
+    fake_db.cognito.gone.add("me")
+    # The same (still valid) token comes back after the delete.
+    assert me.call("GET", "/me")[0] == 401
+    assert sql("SELECT COUNT(*) AS n FROM workout.athlete WHERE cognito_sub = :s", s=me.sub)[0][0] == 0

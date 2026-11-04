@@ -9,13 +9,22 @@ below let an accepted friend read (never change) a friend's lifts and programs.
 
 from __future__ import annotations
 
-import pg8000.native as pg
+import time
 
-from .config import UNIQUE_VIOLATION
+import boto3
+import pg8000.native as pg
+from botocore.exceptions import ClientError
+
+from .config import AWS_REGION, COGNITO_USER_POOL_ID, UNIQUE_VIOLATION
 from .db import Tx, pg_code, query, runner
 from .responses import HttpError
 
-_athlete_cache: dict[str, int] = {}
+_cognito = boto3.client("cognito-idp", region_name=AWS_REGION)
+
+# sub -> (athlete id, time to look it up again). Short, so a container that still holds the
+# id of a deleted account stops writing for it within a minute.
+_athlete_cache: dict[str, tuple[int, float]] = {}
+ATHLETE_CACHE_SECONDS = 60
 
 
 def claims_from_event(event: dict) -> dict:
@@ -31,15 +40,33 @@ def claims_from_event(event: dict) -> dict:
     return claims
 
 
+def _require_cognito_user(username: str) -> None:
+    """401 unless the Cognito user still exists.
+
+    A deleted user's access token stays valid for up to an hour, and must not bring back
+    an empty profile. Checked only when a profile is about to be created.
+    """
+    if not COGNITO_USER_POOL_ID:
+        return
+    try:
+        _cognito.admin_get_user(UserPoolId=COGNITO_USER_POOL_ID, Username=username)
+    except ClientError as err:
+        if err.response.get("Error", {}).get("Code") == "UserNotFoundException":
+            raise HttpError(401, "This account no longer exists") from None
+        raise
+
+
 def current_athlete_id(claims: dict) -> int:
     """Return the caller's athlete id, creating their profile on first use."""
     sub = claims["sub"]
-    if sub in _athlete_cache:
-        return _athlete_cache[sub]
+    hit = _athlete_cache.get(sub)
+    if hit and hit[1] > time.monotonic():
+        return hit[0]
 
     rows = query("SELECT id FROM workout.athlete WHERE cognito_sub = :sub", sub=sub)
     if not rows:
         username = claims.get("username") or claims.get("cognito:username") or sub
+        _require_cognito_user(username)
         try:
             rows = query(
                 """INSERT INTO workout.athlete (cognito_sub, username)
@@ -53,7 +80,7 @@ def current_athlete_id(claims: dict) -> int:
                 raise
             rows = query("SELECT id FROM workout.athlete WHERE cognito_sub = :sub", sub=sub)
 
-    _athlete_cache[sub] = rows[0]["id"]
+    _athlete_cache[sub] = (rows[0]["id"], time.monotonic() + ATHLETE_CACHE_SECONDS)
     return rows[0]["id"]
 
 

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import hmac
 import logging
 import time
 
-from . import throttle
+from . import config, throttle
 from .auth import claims_from_event, current_athlete_id
 from .logs import log_event
 from .responses import HttpError, parse_body, respond
@@ -51,6 +52,16 @@ def _dispatch(event: dict, method: str, path: str, seen: dict) -> dict:
         return respond(500, {"error": "Internal server error"})
 
 
+def _from_cloudfront(event: dict) -> bool:
+    """False when the request skipped CloudFront (and so the WAF) and must be refused."""
+    if not config.ORIGIN_SECRET:
+        return True
+    sent = (event.get("headers") or {}).get(config.ORIGIN_HEADER)
+    if sent is None:
+        return not config.ORIGIN_SECRET_REQUIRED
+    return hmac.compare_digest(sent.encode(), config.ORIGIN_SECRET.encode())
+
+
 def handler(event, context):
     method = event.get("requestContext", {}).get("http", {}).get("method", "GET")
     path = event.get("rawPath", "/")
@@ -60,6 +71,10 @@ def handler(event, context):
     # headers itself from the API's CORS settings.
     if method == "OPTIONS":
         return {"statusCode": 204}
+
+    if not _from_cloudfront(event):
+        log_event("origin_check_failed", method=method)
+        return respond(403, {"error": "Forbidden"})
 
     started = time.monotonic()
     seen: dict = {}

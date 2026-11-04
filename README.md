@@ -43,18 +43,26 @@ athlete row goes last so a stopped run can be repeated. After 20 seconds it answ
 {done: false}`; send the same request again until it answers `200 {done: true}`. If the database
 part succeeds but Cognito fails, it answers 502 and says the data is already gone.
 
-Needs, set by the owner: env var `COGNITO_USER_POOL_ID`, and `cognito-idp:AdminDeleteUser` on the
+Needs, set by the owner: env var `COGNITO_USER_POOL_ID`, and `cognito-idp:AdminDeleteUser` + `cognito-idp:AdminGetUser` on the
 pool for the Lambda's role.
-
-Known gap: an access token stays valid (up to an hour) after its Cognito user is deleted, and
-`current_athlete_id()` would create a fresh empty athlete for it; another warm Lambda container may
-also still have the old id cached. The frontend stops calling the API after a delete, so this only
-matters for a stolen or leftover token.
 
 Lambda configuration (env vars `DSQL_ENDPOINT` and `COGNITO_USER_POOL_ID`, IAM role, API Gateway
 routes) is managed in the AWS console and is not changed by `deploy.sh`.
 Note that `aws lambda update-function-configuration --environment` replaces the whole variable
-map, so always include both variables.
+map, so always include every variable (`DSQL_ENDPOINT`, `COGNITO_USER_POOL_ID`, `ORIGIN_SECRET`,
+`ORIGIN_SECRET_REQUIRED`).
+
+**Deleted accounts and old tokens.** A deleted user's access token stays valid for up to an hour.
+Before a new profile is created, `src/auth.py` asks Cognito (`AdminGetUser`) whether the user still
+exists and answers 401 if not. The per-container athlete-id cache expires after 60 seconds, so a
+container holding the id of a deleted account stops writing for it within a minute.
+
+**Closing the execute-api bypass.** The CloudFront origin sends a secret header
+`X-Origin-Verify`; the Lambda compares it with env var `ORIGIN_SECRET` (`src/app.py`). With
+`ORIGIN_SECRET_REQUIRED=true` a request without the header gets 403, so calling the
+`execute-api` address directly (which skips the WAF) fails. `OPTIONS` preflights are exempt.
+To rotate: deploy with the new secret in `ORIGIN_SECRET` and `ORIGIN_SECRET_REQUIRED` unset,
+change the CloudFront header, then set `ORIGIN_SECRET_REQUIRED=true` again.
 
 ## Limits, logging and monitoring
 
@@ -68,7 +76,7 @@ CREATE TABLE workout.rate_limit (
   action     text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX ASYNC ON workout.rate_limit (athlete_id, action, created_at);
+CREATE INDEX ASYNC rate_limit_lookup ON workout.rate_limit (athlete_id, action, created_at);
 ```
 
 Check `workout.athlete.id`'s type first and match `athlete_id` to it. Old rows are deleted
@@ -86,6 +94,14 @@ server errors `{ $.event = "request" && $.status >= 500 }`.
 (`DSQL_ENDPOINT`), Cognito pool (`COGNITO_USER_POOL_ID`) and HTTP API pointing at that Lambda; a
 second stage on the production API would still call the production Lambda. Never copy real user
 data into it.
+
+Staging as built (us-east-2, 2026-11-04): DSQL cluster `rvugtya5xyrzoy6uyuixxhewia` (deletion
+protection off), Cognito pool `us-east-2_XDQcri7AS` (client `483euju4s3l5fhf6l2gp9i715a`),
+Lambda `wield-steel-backend-staging` with its own role, HTTP API `iev40if5y5` (CORS allows
+localhost and the Amplify `staging` branch), and the Amplify branch `staging`. The schema was
+rebuilt from production and only the shared `muscle_group` and `exercise` rows were copied.
+Staging has no `ORIGIN_SECRET`, so its execute-api address is open. Add testers with
+`aws cognito-idp admin-create-user` (sign-up is admin-only there too).
 
 ## Running the tests
 
