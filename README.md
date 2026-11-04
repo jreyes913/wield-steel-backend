@@ -89,6 +89,15 @@ writes `{"event":"dsql_connect_failed","error":"<ExceptionName>"}`. For the Clou
 filter on the Lambda's log group use the pattern `{ $.event = "dsql_connect_failed" }`, and for
 server errors `{ $.event = "request" && $.status >= 500 }`.
 
+**WAF alarm.** An organization policy denies creating alarms in us-east-1, where the CloudFront
+WAF reports `BlockedRequests` (reading it is allowed). So the Lambda `wield-steel-waf-metric`
+(`monitoring/waf_blocked_requests.py`, run every 5 minutes by the EventBridge rule of the same
+name, role `wield-steel-waf-metric-role`) copies the previous 5-minute total into
+`WieldSteel/WafBlockedRequests` in us-east-2, and the alarm `waf-blocked-requests` (100 or more
+in 5 minutes, a placeholder threshold) emails the alerts topic. Update the code with
+`zip f.zip waf_blocked_requests.py` and `aws lambda update-function-code`; `deploy.sh` does not
+touch it. It only reads us-east-1 and creates nothing there.
+
 **Staging.** `deploy.sh` reads `FUNCTION_NAME` and `AWS_REGION`, so a staging Lambda is deployed with
 `FUNCTION_NAME=wield-steel-backend-staging ./deploy.sh`. Staging needs its own DSQL cluster
 (`DSQL_ENDPOINT`), Cognito pool (`COGNITO_USER_POOL_ID`) and HTTP API pointing at that Lambda; a
