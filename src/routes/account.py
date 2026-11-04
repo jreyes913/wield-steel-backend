@@ -15,6 +15,7 @@ from ..config import (
     UNDEFINED_TABLE,
 )
 from ..db import Tx, pg_code, query, transaction
+from ..program_copy import detach_copies_of
 from ..responses import HttpError, respond
 from ..validation import to_text
 from .coaching import _links
@@ -64,13 +65,17 @@ def _export_lifts(me: int) -> list[dict]:
 def _export_programs(me: int) -> list[dict]:
     """All the caller's programs with days, sets and subsets nested."""
     rows = query(
-        """SELECT p.id AS program_id, p.name AS program_name, p.start_date, p.end_date, p.is_public,
+        """SELECT p.id AS program_id, COALESCE(sp.name, p.name) AS program_name,
+                  COALESCE(sp.start_date, p.start_date) AS start_date,
+                  COALESCE(sp.end_date, p.end_date) AS end_date, p.is_public,
+                  (p.source_program_id IS NOT NULL) AS synced,
                   pl.id AS day_id, pl.name AS day_name,
                   ps.id AS set_id, ps.position AS set_position,
                   pss.id AS subset_id, pss.position AS subset_position, pss.reps,
                   e.name AS exercise_name
              FROM workout.program p
-             LEFT JOIN workout.program_lift pl ON pl.program_id = p.id
+             LEFT JOIN workout.program sp ON sp.id = p.source_program_id
+             LEFT JOIN workout.program_lift pl ON pl.program_id = COALESCE(p.source_program_id, p.id)
              LEFT JOIN workout.program_exercise_set ps ON ps.program_lift_id = pl.id
              LEFT JOIN workout.program_exercise_subset pss ON pss.program_exercise_set_id = ps.id
              LEFT JOIN workout.exercise e ON e.id = pss.exercise_id
@@ -85,7 +90,7 @@ def _export_programs(me: int) -> list[dict]:
         program = programs.setdefault(r["program_id"], {
             "id": r["program_id"], "name": r["program_name"],
             "start_date": r["start_date"], "end_date": r["end_date"],
-            "public": bool(r["is_public"]), "days": [],
+            "public": bool(r["is_public"]), "synced_with_coach": bool(r["synced"]), "days": [],
         })
         if r["day_id"] is None:
             continue
@@ -153,6 +158,8 @@ def _delete_in_batches(me: int, deadline: float) -> bool:
         for row in query(f"SELECT id FROM workout.{table} WHERE athlete_id = :me", me=me):
             if time.monotonic() > deadline:
                 return False
+            if table == "program":
+                detach_copies_of(row["id"])  # athletes following it keep a copy
             transaction(lambda tx, row_id=row["id"]: delete_tree(tx, row_id))
 
     pairs = query(

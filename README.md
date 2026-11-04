@@ -83,12 +83,20 @@ and account deletion removes the rows. Create the table before deploying (DDL in
 
 `workout.program.is_public` (nullable boolean; NULL means private, because DSQL cannot add a
 column with a default) controls what friends and coaches see: friend and coach program routes
-only return public programs, and copying a friend's program needs it public. `assigned_by` is the
-coach who sent a program. `POST /programs/{id}/send` with `{"athlete_ids": [...]}` (at most 50,
-rate limited) copies the caller's program (public or not) into each accepted athlete's programs
-through `src/program_copy.py`, one transaction per athlete, and returns the outcome per athlete.
-Copies are private and carry `assigned_by`; if that coach later deletes their account the id
-dangles and the list shows no sender name.
+only return public programs, and copying a friend's program needs it public. A friend's copy is a
+clean, independent copy (`src/program_copy.py`), no syncing.
+
+**Programs a coach sends are kept in sync.** `POST /programs/{id}/send` with `{"athlete_ids": [...]}`
+(at most 50, rate limited, sending twice is harmless) gives each accepted athlete a program row with
+`source_program_id` pointing at the coach's program and `assigned_by` the coach. The row has no days
+of its own: reads (`GET /programs`, `GET /programs/{id}`, applying a day to a lift via
+`readable_program_day`, export) use the coach's name, dates and days, so every add, delete or
+rename shows at once and nothing needs copying. For the athlete it is read-only (409 on edits) and
+can never be made public; it can be deleted. The sync ends, by `detach_program()`, when the coach
+deletes the program, the coaching link ends (either side removes it, or blocks), or the coach
+deletes their account: the athlete's row is filled with a copy of what it showed (day by day, in
+separate transactions) and keeps `assigned_by`, so it stays private for good but is now editable.
+A received program can't be sent on. If the coach's account is gone, the list shows no sender name.
 
 ## Limits, logging and monitoring
 

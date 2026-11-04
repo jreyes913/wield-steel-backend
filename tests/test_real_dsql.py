@@ -55,18 +55,18 @@ def conn():
     c = pg.Connection(user="admin", password=token, host=ENDPOINT, port=5432, database="postgres",
                       ssl_context=ssl.create_default_context(), timeout=30)
     c.run(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}")
+    # Columns added after the first version of the schema (DSQL cannot ADD COLUMN IF NOT EXISTS).
+    have = {r[0] for r in c.run(
+        "SELECT column_name FROM information_schema.columns WHERE table_schema = :s AND table_name = 'program'",
+        s=SCHEMA)}
+    for column, kind in (("is_public", "boolean"), ("assigned_by", "bigint"), ("source_program_id", "bigint")):
+        if have and column not in have:  # an older scratch schema; a new one gets them from the DDL
+            c.run(f"ALTER TABLE {SCHEMA}.program ADD COLUMN {column} {kind}")
     ddl = (Path(__file__).parent / "dsql_schema.sql").read_text().replace("workout.", f"{SCHEMA}.")
     for stmt in re.split(r";\n", ddl):
         stmt = "\n".join(l for l in stmt.splitlines() if not l.startswith("--")).strip()
         if stmt:
             c.run(stmt)
-    # Columns added after the first version of the schema (DSQL cannot ADD COLUMN IF NOT EXISTS).
-    have = {r[0] for r in c.run(
-        "SELECT column_name FROM information_schema.columns WHERE table_schema = :s AND table_name = 'program'",
-        s=SCHEMA)}
-    for column, kind in (("is_public", "boolean"), ("assigned_by", "bigint")):
-        if column not in have:
-            c.run(f"ALTER TABLE {SCHEMA}.program ADD COLUMN {column} {kind}")
     yield c
     c.close()
 
@@ -178,3 +178,23 @@ def test_private_by_default_public_on_request_and_send(make_user, conn):
         assert [len(d["sets"]) for d in a.get(f"/programs/{got['id']}")[1]["days"]] == [2]
     assert count(conn, "program") == 3
     assert coach.put(f"/programs/{pid}", {"is_public": True})[1]["is_public"] is True
+
+
+def test_synced_program_follows_the_coach_then_freezes(make_user, conn):
+    coach, athlete = make_user("coach"), make_user("athlete")
+    assert coach.post("/coaching-requests", {"username": "athlete"})[0] == 201
+    assert athlete.put(f"/coaching-requests/{coach.id}", {"status": "accepted"})[0] == 200
+    pid = add_program(coach, sets=2, public=False)
+    [sent] = coach.post(f"/programs/{pid}/send", {"athlete_ids": [athlete.id]})[1]["results"]
+    mine = sent["program_id"]
+    day = coach.get(f"/programs/{pid}")[1]["days"][0]
+    coach.post(f"/program-days/{day['id']}/sets", {"position": 9})
+    assert [len(d["sets"]) for d in athlete.get(f"/programs/{mine}")[1]["days"]] == [3]
+    assert athlete.put(f"/programs/{mine}", {"is_public": True})[0] == 409
+    assert count(conn, "program_lift") == 1  # the athlete's row has no days of its own
+    # The coach deletes the program: the athlete keeps a real copy.
+    assert coach.delete(f"/programs/{pid}")[0] == 200
+    kept = athlete.get(f"/programs/{mine}")[1]
+    assert kept["synced"] is False and [len(d["sets"]) for d in kept["days"]] == [3]
+    assert count(conn, "program_lift") == 1  # now the athlete's, and the coach's is gone
+    assert athlete.put(f"/programs/{mine}", {"is_public": True})[0] == 400

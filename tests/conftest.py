@@ -38,7 +38,7 @@ CREATE TABLE workout.exercise_set (id INTEGER PRIMARY KEY, lift_id INTEGER, posi
 CREATE TABLE workout.exercise_subset (id INTEGER PRIMARY KEY, exercise_set_id INTEGER,
   exercise_id INTEGER, position INTEGER, reps INTEGER, rir INTEGER, weight REAL);
 CREATE TABLE workout.program (id INTEGER PRIMARY KEY, athlete_id INTEGER, name TEXT,
-  start_date TEXT, end_date TEXT, is_public INTEGER, assigned_by INTEGER);
+  start_date TEXT, end_date TEXT, is_public INTEGER, assigned_by INTEGER, source_program_id INTEGER);
 CREATE TABLE workout.program_lift (id INTEGER PRIMARY KEY, program_id INTEGER, name TEXT);
 CREATE TABLE workout.program_exercise_set (id INTEGER PRIMARY KEY, program_lift_id INTEGER, position INTEGER);
 CREATE TABLE workout.program_exercise_subset (id INTEGER PRIMARY KEY, program_exercise_set_id INTEGER,

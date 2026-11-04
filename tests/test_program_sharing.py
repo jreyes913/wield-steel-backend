@@ -67,17 +67,6 @@ def test_coach_sends_a_private_program_to_many_athletes(make_user):
     assert len(names(coach)) == 1  # the original is untouched and still private
 
 
-def test_sent_copy_is_independent(make_user):
-    coach, a = make_user("coach"), make_user("athlete")
-    link(coach, a)
-    pid = add_program(coach)
-    coach.post(f"/programs/{pid}/send", {"athlete_ids": [a.id]})
-    mine = a.get("/programs")[1][0]["id"]
-    assert a.put(f"/programs/{mine}", {"name": "My version"})[0] == 200
-    assert coach.get(f"/programs/{pid}")[1]["name"] == "Push"
-    assert a.delete(f"/programs/{mine}")[0] == 200
-
-
 def test_send_rules(make_user):
     coach, a, stranger = make_user("coach"), make_user("athlete"), make_user("stranger")
     pid = add_program(coach)
@@ -99,17 +88,3 @@ def test_sending_is_rate_limited(make_user):
     for _ in range(RATE_LIMIT_MAX):
         assert coach.post(f"/programs/{pid}/send", {"athlete_ids": [a.id]})[0] == 200
     assert coach.post(f"/programs/{pid}/send", {"athlete_ids": [a.id]})[0] == 429
-
-
-def test_oversized_program_is_refused_per_athlete(make_user, sql):
-    from src.config import PROGRAM_COPY_ROW_LIMIT
-    coach, a = make_user("coach"), make_user("athlete")
-    link(coach, a)
-    pid = add_program(coach)
-    [(day_id,)] = sql("SELECT id FROM workout.program_lift WHERE program_id = :p", p=pid)
-    sql("""WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < :n)
-           INSERT INTO workout.program_exercise_set (program_lift_id, position) SELECT :d, i FROM n""",
-        n=PROGRAM_COPY_ROW_LIMIT, d=day_id)
-    result = coach.post(f"/programs/{pid}/send", {"athlete_ids": [a.id]})[1]["results"][0]
-    assert result["ok"] is False and "too big" in result["error"]
-    assert names(a) == []

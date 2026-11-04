@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from ..auth import own_program, require_coach_of
 from ..db import Tx, query, transaction
-from ..program_copy import copy_program
+from ..program_copy import detach_link
 from ..responses import HttpError, respond
 from ..validation import path_id, require_fields, to_text
 from .friends import _as_athlete_entry, _created, _name_key, _public_profile
@@ -193,6 +193,8 @@ def set_sharing(req):
 
 
 def _end(coach_id: int, athlete_id: int, label: str) -> None:
+    detach_link(coach_id, athlete_id)  # the athlete keeps what was sent, no longer kept in sync
+
     def work(tx: Tx):
         rows = tx.query(
             "SELECT 1 AS ok FROM workout.coaching WHERE coach_id = :coach AND athlete_id = :athlete AND status = 'accepted'",
@@ -282,12 +284,14 @@ MAX_SEND_ATHLETES = 50
 
 
 def send_program(req):
-    """Put a copy of one of my programs into each chosen athlete's programs (id = my program).
+    """Give each chosen athlete a program that follows one of mine (id = my program).
 
     Body: {"athlete_ids": [...]}. Only athletes I coach (accepted) can receive it; the athlete
-    needs no action. Each copy is its own transaction, so one failure never undoes the others,
-    and the answer lists the outcome per athlete. The copies are private and say who sent them.
-    The program itself can stay private: sending is not sharing.
+    needs no action. The athlete gets a row that shows my program live: when I add or delete a
+    day, set or exercise it changes for them too. It is read-only and permanently private for
+    them. Sending the same program again is harmless. The program itself can stay private:
+    sending is not sharing. Each athlete is its own transaction and the answer lists the outcome
+    per athlete.
     """
     me = req["athlete_id"]
     program_id = path_id(req)
@@ -300,15 +304,29 @@ def send_program(req):
         raise HttpError(400, f"At most {MAX_SEND_ATHLETES} athletes at a time")
 
     source = own_program(program_id, me)
+    if source["assigned_by"] is not None:
+        raise HttpError(400, "A program a coach sent you can't be sent on")
     results = []
     for athlete_id in athlete_ids:
         def work(tx: Tx, athlete_id=athlete_id):
             require_coach_of(athlete_id, me, tx)  # 404 unless I coach them
-            return copy_program(tx, program_id, athlete_id, source["name"], assigned_by=me)
+            have = tx.query(
+                "SELECT id FROM workout.program WHERE athlete_id = :a AND source_program_id = :s",
+                a=athlete_id, s=program_id,
+            )
+            if have:
+                return have[0]["id"], True
+            [row] = tx.query(
+                """INSERT INTO workout.program
+                     (athlete_id, name, start_date, end_date, is_public, assigned_by, source_program_id)
+                   VALUES (:a, :name, NULL, NULL, false, :by, :s) RETURNING id""",
+                a=athlete_id, name=source["name"], by=me, s=program_id,
+            )
+            return row["id"], False
 
         try:
-            copy = transaction(work)
-            results.append({"athlete_id": athlete_id, "ok": True, "program_id": copy["id"]})
+            new_id, already = transaction(work)
+            results.append({"athlete_id": athlete_id, "ok": True, "program_id": new_id, "already_sent": already})
         except HttpError as err:
             results.append({"athlete_id": athlete_id, "ok": False,
                             "error": "Not one of your athletes" if err.status == 404 else str(err)})

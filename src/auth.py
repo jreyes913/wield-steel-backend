@@ -138,6 +138,27 @@ def own_program_day(day_id: int, me: int, db: Tx | None = None) -> dict:
     )
 
 
+def editable_program(program_id: int, me: int, db: Tx | None = None) -> dict:
+    """My program, if I may change it. One a coach keeps in sync is read-only (409)."""
+    row = own_program(program_id, me, db)
+    if row["source_program_id"] is not None:
+        raise HttpError(409, "This program is kept in sync by your coach, so only they can change it")
+    return row
+
+
+def readable_program_day(day_id: int, me: int, db: Tx | None = None) -> dict:
+    """A day of one of my programs, or of a coach's program that I follow (read, never edit)."""
+    return _owned(
+        """SELECT pl.* FROM workout.program_lift pl
+             JOIN workout.program p ON p.id = pl.program_id
+            WHERE pl.id = :id
+              AND (p.athlete_id = :me
+                   OR p.id IN (SELECT source_program_id FROM workout.program
+                                WHERE athlete_id = :me AND source_program_id IS NOT NULL))""",
+        day_id, me, "Program day", db,
+    )
+
+
 def own_program_set(set_id: int, me: int, db: Tx | None = None) -> dict:
     return _owned(
         """SELECT ps.* FROM workout.program_exercise_set ps

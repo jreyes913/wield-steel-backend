@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..auth import own_lift, own_program_day, own_set, own_subset
+from ..auth import own_lift, own_set, own_subset, readable_program_day
 from ..cascade import delete_lift_tree, delete_set_tree
 from ..db import Tx, query, transaction
 from ..responses import respond
@@ -196,7 +196,7 @@ def apply_program_day(req):
 
     def work(tx: Tx):
         lift = own_lift(lift_id, me, tx)
-        own_program_day(day_id, me, tx)
+        readable_program_day(day_id, me, tx)
 
         # Append after any sets already in the lift so positions don't collide.
         max_pos = tx.query(

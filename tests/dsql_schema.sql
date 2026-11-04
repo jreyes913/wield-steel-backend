@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS workout.program (
   end_date date,
   is_public boolean,
   assigned_by bigint,
+  source_program_id bigint,
   PRIMARY KEY (id)
 );
 CREATE TABLE IF NOT EXISTS workout.program_exercise_set (
@@ -121,3 +122,4 @@ CREATE UNIQUE INDEX ASYNC IF NOT EXISTS athlete_username_key ON workout.athlete 
 CREATE INDEX ASYNC IF NOT EXISTS friendship_addressee_idx ON workout.friendship (addressee_id);
 CREATE INDEX ASYNC IF NOT EXISTS rate_limit_lookup ON workout.rate_limit (athlete_id, action, created_at);
 CREATE INDEX ASYNC IF NOT EXISTS coaching_athlete_idx ON workout.coaching (athlete_id);
+CREATE INDEX ASYNC IF NOT EXISTS idx_program_source ON workout.program (source_program_id);

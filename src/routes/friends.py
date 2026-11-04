@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from ..auth import friend_lift, friend_program, lifts_visible, require_friend
 from ..db import Tx, query, runner, transaction
-from ..program_copy import copy_program
+from ..program_copy import copy_program, detach_link
 from ..responses import HttpError, respond
 from ..validation import path_id, require_fields, to_text
 from .lifts import _lift_detail
@@ -278,6 +278,9 @@ def _block(me: int, other_id: int) -> dict:
     """Block athlete other_id (one transaction) and return their public profile."""
     if other_id == me:
         raise HttpError(400, "You can't block yourself")
+    # Any coaching between us ends, so programs one sent the other stop being kept in sync.
+    detach_link(me, other_id)
+    detach_link(other_id, me)
 
     def work(tx: Tx):
         athlete = _public_profile(other_id, tx)  # 404 if there is no such athlete

@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-from ..auth import own_program, own_program_day, own_program_set, own_program_subset
+from ..auth import (
+    editable_program, own_program, own_program_day, own_program_set, own_program_subset,
+)
 from ..cascade import delete_program_day_tree, delete_program_set_tree, delete_program_tree
 from ..db import Tx, query, transaction
+from ..program_copy import detach_copies_of
+from ..responses import HttpError
 from ..responses import respond
 from ..rows import assert_exists, update_row
 from ..validation import (
@@ -61,25 +65,49 @@ def _program_detail(program: dict) -> dict:
 
 # ---------- Programs ----------
 
-def list_programs(req):
-    rows = query(
-        "SELECT * FROM workout.program WHERE athlete_id = :me ORDER BY id DESC",
-        me=req["athlete_id"],
-    )
-    # Programs a coach sent me show who sent them (None if that coach has since left).
-    senders = {r["assigned_by"] for r in rows if r["assigned_by"] is not None}
+def _sender_names(rows: list[dict]) -> dict:
+    """Display names of the coaches who sent these programs (missing if they have left)."""
     names = {}
-    for sender in senders:
+    for sender in {r["assigned_by"] for r in rows if r["assigned_by"] is not None}:
         found = query(
             "SELECT username, first_name, last_name FROM workout.athlete WHERE id = :id", id=sender
         )
         if found:
             f = found[0]
             names[sender] = " ".join(p for p in (f["first_name"], f["last_name"]) if p) or f["username"]
+    return names
+
+
+def _followed(program: dict) -> dict:
+    """The coach's program that a synced program shows (its name, dates and days come from it)."""
+    rows = query(
+        "SELECT id, name, start_date, end_date FROM workout.program WHERE id = :id",
+        id=program["source_program_id"],
+    )
+    if not rows:  # cannot happen: the sync is ended before the coach's program goes
+        raise HttpError(404, "Program not found")
+    return rows[0]
+
+
+def _as_synced(program: dict, followed: dict) -> dict:
+    """My row, showing the coach's name and dates. Always private and read-only."""
+    return {**program, "name": followed["name"], "start_date": followed["start_date"],
+            "end_date": followed["end_date"], "is_public": False, "synced": True}
+
+
+def list_programs(req):
+    rows = query(
+        "SELECT * FROM workout.program WHERE athlete_id = :me ORDER BY id DESC",
+        me=req["athlete_id"],
+    )
+    names = _sender_names(rows)
+    out = []
     for r in rows:
+        r = _as_synced(r, _followed(r)) if r["source_program_id"] is not None else {**r, "synced": False}
         r["is_public"] = bool(r["is_public"])
         r["assigned_by_name"] = names.get(r["assigned_by"])
-    return respond(200, rows)
+        out.append(r)
+    return respond(200, out)
 
 
 def create_program(req):
@@ -99,17 +127,29 @@ def create_program(req):
 
 def get_program(req):
     program = own_program(path_id(req), req["athlete_id"])
-    return respond(200, _program_detail(program))
+    if program["source_program_id"] is None:
+        return respond(200, {**_program_detail(program), "synced": False})
+    # A coach's program I follow: their days (so their ids), my row's id.
+    followed = _followed(program)
+    detail = _program_detail(followed)
+    return respond(200, {**_as_synced(program, followed), "days": detail["days"],
+                         "assigned_by_name": _sender_names([program]).get(program["assigned_by"])})
 
 
 def update_program(req):
     program_id = path_id(req)
-    own_program(program_id, req["athlete_id"])
+    program = editable_program(program_id, req["athlete_id"])
+    if program["assigned_by"] is not None and req["body"].get("is_public"):
+        # Whatever a coach sent stays private, even once it is no longer kept in sync.
+        raise HttpError(400, "A program from a coach can't be made public")
     return respond(200, update_row("program", program_id, req["body"], PROGRAM_FIELDS))
 
 
 def delete_program(req):
     program_id = path_id(req)
+    own_program(program_id, req["athlete_id"])
+    # Athletes who follow this program keep what they have, as an ordinary private copy.
+    detach_copies_of(program_id)
 
     def work(tx: Tx):
         own_program(program_id, req["athlete_id"], tx)
@@ -125,7 +165,7 @@ def add_program_day(req):
     program_id = path_id(req)
     body = req["body"]
     require_fields(body, "name")
-    own_program(program_id, req["athlete_id"])
+    editable_program(program_id, req["athlete_id"])
     [row] = query(
         """INSERT INTO workout.program_lift (program_id, name)
            VALUES (:pid, :name) RETURNING *""",
