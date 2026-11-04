@@ -79,6 +79,17 @@ link and hides the athlete, and coach requests are rate limited. Export lists co
 and account deletion removes the rows. Create the table before deploying (DDL in
 `tests/dsql_schema.sql`).
 
+### Program visibility and sending
+
+`workout.program.is_public` (nullable boolean; NULL means private, because DSQL cannot add a
+column with a default) controls what friends and coaches see: friend and coach program routes
+only return public programs, and copying a friend's program needs it public. `assigned_by` is the
+coach who sent a program. `POST /programs/{id}/send` with `{"athlete_ids": [...]}` (at most 50,
+rate limited) copies the caller's program (public or not) into each accepted athlete's programs
+through `src/program_copy.py`, one transaction per athlete, and returns the outcome per athlete.
+Copies are private and carry `assigned_by`; if that coach later deletes their account the id
+dangles and the list shows no sender name.
+
 ## Limits, logging and monitoring
 
 **Rate limit table (owner runs this first).** Without it the limits are skipped (a

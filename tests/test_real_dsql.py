@@ -60,6 +60,13 @@ def conn():
         stmt = "\n".join(l for l in stmt.splitlines() if not l.startswith("--")).strip()
         if stmt:
             c.run(stmt)
+    # Columns added after the first version of the schema (DSQL cannot ADD COLUMN IF NOT EXISTS).
+    have = {r[0] for r in c.run(
+        "SELECT column_name FROM information_schema.columns WHERE table_schema = :s AND table_name = 'program'",
+        s=SCHEMA)}
+    for column, kind in (("is_public", "boolean"), ("assigned_by", "bigint")):
+        if column not in have:
+            c.run(f"ALTER TABLE {SCHEMA}.program ADD COLUMN {column} {kind}")
     yield c
     c.close()
 
@@ -153,3 +160,21 @@ def test_coaching_access_and_cleanup(make_user, conn):
     assert coach.get(f"/coached/{athlete.id}/lifts")[1][0]["body_weight"] == 180
     assert athlete.delete("/me", {"confirm": "athlete"}) == (200, {"done": True})
     assert count(conn, "coaching") == 0
+
+
+def test_private_by_default_public_on_request_and_send(make_user, conn):
+    coach, a1, a2 = make_user("coach"), make_user("one"), make_user("two")
+    for a in (a1, a2):
+        assert coach.post("/coaching-requests", {"username": a.username})[0] == 201
+        assert a.put(f"/coaching-requests/{coach.id}", {"status": "accepted"})[0] == 200
+    pid = add_program(coach, sets=2, public=False)
+    assert a1.get(f"/coached/{coach.id}/programs")[0] == 404  # athletes don't read their coach's
+    assert coach.get("/programs")[1][0]["is_public"] is False
+    code, body = coach.post(f"/programs/{pid}/send", {"athlete_ids": [a1.id, a2.id]})
+    assert code == 200 and all(r["ok"] for r in body["results"])
+    for a in (a1, a2):
+        [got] = a.get("/programs")[1]
+        assert got["is_public"] is False and got["assigned_by_name"] == "coach"
+        assert [len(d["sets"]) for d in a.get(f"/programs/{got['id']}")[1]["days"]] == [2]
+    assert count(conn, "program") == 3
+    assert coach.put(f"/programs/{pid}", {"is_public": True})[1]["is_public"] is True

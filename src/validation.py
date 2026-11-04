@@ -49,6 +49,12 @@ def to_text(value: Any, field: str = "value") -> str:
     return value.strip()
 
 
+def to_bool(value: Any, field: str = "value") -> bool:
+    if not isinstance(value, bool):
+        raise HttpError(400, f"{field} must be true or false")
+    return value
+
+
 def to_username(value: Any, field: str = "username") -> str:
     """A username: 3 to 30 letters, digits, dots, underscores or hyphens. Returned lowercase."""
     text = to_text(value, field).lower()

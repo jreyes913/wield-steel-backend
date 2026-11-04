@@ -64,6 +64,8 @@ CREATE TABLE IF NOT EXISTS workout.program (
   name text NOT NULL,
   start_date date,
   end_date date,
+  is_public boolean,
+  assigned_by bigint,
   PRIMARY KEY (id)
 );
 CREATE TABLE IF NOT EXISTS workout.program_exercise_set (

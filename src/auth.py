@@ -208,10 +208,10 @@ def friend_lift(lift_id: int, friend_id: int, db: Tx | None = None) -> dict:
 
 
 def friend_program(program_id: int, friend_id: int, db: Tx | None = None) -> dict:
-    """A friend's program row. Call require_friend() first; this only checks it is theirs."""
+    """A friend's program row. Call require_friend() first; this checks it is theirs and public."""
     return _owned(
         """SELECT id, name, start_date, end_date FROM workout.program
-            WHERE id = :id AND athlete_id = :me""",
+            WHERE id = :id AND athlete_id = :me AND is_public = true""",
         program_id, friend_id, "Program", db,
     )
 

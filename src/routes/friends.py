@@ -15,8 +15,8 @@ addressee_id; blocked rows never show up in the friend or request lists.
 from __future__ import annotations
 
 from ..auth import friend_lift, friend_program, lifts_visible, require_friend
-from ..config import PROGRAM_COPY_ROW_LIMIT
 from ..db import Tx, query, runner, transaction
+from ..program_copy import copy_program
 from ..responses import HttpError, respond
 from ..validation import path_id, require_fields, to_text
 from .lifts import _lift_detail
@@ -374,7 +374,7 @@ def list_friend_programs(req):
     require_friend(friend_id, req["athlete_id"])
     rows = query(
         """SELECT id, name, start_date, end_date FROM workout.program
-            WHERE athlete_id = :friend ORDER BY id DESC""",
+            WHERE athlete_id = :friend AND is_public = true ORDER BY id DESC""",
         friend=friend_id,
     )
     return respond(200, rows)
@@ -387,33 +387,6 @@ def get_friend_program(req):
     return respond(200, _program_detail(program))
 
 
-def _check_copy_size(tx: Tx, program_id: int) -> None:
-    """Refuse a program too big to copy in one transaction."""
-    [days] = tx.query(
-        "SELECT COUNT(*) AS n FROM workout.program_lift WHERE program_id = :id", id=program_id
-    )
-    [sets] = tx.query(
-        """SELECT COUNT(*) AS n FROM workout.program_exercise_set ps
-             JOIN workout.program_lift pl ON pl.id = ps.program_lift_id
-            WHERE pl.program_id = :id""",
-        id=program_id,
-    )
-    [subsets] = tx.query(
-        """SELECT COUNT(*) AS n FROM workout.program_exercise_subset pss
-             JOIN workout.program_exercise_set ps ON ps.id = pss.program_exercise_set_id
-             JOIN workout.program_lift pl ON pl.id = ps.program_lift_id
-            WHERE pl.program_id = :id""",
-        id=program_id,
-    )
-    total = days["n"] + sets["n"] + subsets["n"]
-    if total > PROGRAM_COPY_ROW_LIMIT:
-        raise HttpError(
-            422,
-            f"This program is too big to copy ({total} days, sets and exercises; "
-            f"the limit is {PROGRAM_COPY_ROW_LIMIT}).",
-        )
-
-
 def copy_friend_program(req):
     friend_id = path_id(req)
     program_id = int(req["params"]["program_id"])
@@ -421,49 +394,9 @@ def copy_friend_program(req):
 
     def work(tx: Tx):
         require_friend(friend_id, me, tx)
-        source = friend_program(program_id, friend_id, tx)
+        source = friend_program(program_id, friend_id, tx)  # only if they made it public
         friend = _public_profile(friend_id, tx)
-        _check_copy_size(tx, program_id)
         name = " ".join(p for p in (friend["first_name"], friend["last_name"]) if p) or friend["username"]
-
-        [new_program] = tx.query(
-            """INSERT INTO workout.program (athlete_id, name, start_date, end_date)
-               VALUES (:me, :name, NULL, NULL) RETURNING id, name, start_date, end_date""",
-            me=me, name=f"{source['name']} (from {name})",
-        )
-        days = tx.query(
-            "SELECT id, name FROM workout.program_lift WHERE program_id = :id ORDER BY id",
-            id=program_id,
-        )
-        for day in days:
-            [new_day] = tx.query(
-                """INSERT INTO workout.program_lift (program_id, name)
-                   VALUES (:pid, :name) RETURNING id""",
-                pid=new_program["id"], name=day["name"],
-            )
-            sets = tx.query(
-                """SELECT id, position FROM workout.program_exercise_set
-                    WHERE program_lift_id = :id ORDER BY position, id""",
-                id=day["id"],
-            )
-            for old_set in sets:
-                [new_set] = tx.query(
-                    """INSERT INTO workout.program_exercise_set (program_lift_id, position)
-                       VALUES (:day_id, :pos) RETURNING id""",
-                    day_id=new_day["id"], pos=old_set["position"],
-                )
-                subsets = tx.query(
-                    """SELECT exercise_id, position, reps FROM workout.program_exercise_subset
-                        WHERE program_exercise_set_id = :id ORDER BY position, id""",
-                    id=old_set["id"],
-                )
-                for sub in subsets:
-                    tx.query(
-                        """INSERT INTO workout.program_exercise_subset
-                             (program_exercise_set_id, exercise_id, position, reps)
-                           VALUES (:set_id, :ex, :pos, :reps)""",
-                        set_id=new_set["id"], ex=sub["exercise_id"], pos=sub["position"], reps=sub["reps"],
-                    )
-        return new_program
+        return copy_program(tx, program_id, me, f"{source['name']} (from {name})")
 
     return respond(201, _program_detail(transaction(work)))

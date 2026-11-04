@@ -64,7 +64,7 @@ def _export_lifts(me: int) -> list[dict]:
 def _export_programs(me: int) -> list[dict]:
     """All the caller's programs with days, sets and subsets nested."""
     rows = query(
-        """SELECT p.id AS program_id, p.name AS program_name, p.start_date, p.end_date,
+        """SELECT p.id AS program_id, p.name AS program_name, p.start_date, p.end_date, p.is_public,
                   pl.id AS day_id, pl.name AS day_name,
                   ps.id AS set_id, ps.position AS set_position,
                   pss.id AS subset_id, pss.position AS subset_position, pss.reps,
@@ -84,7 +84,8 @@ def _export_programs(me: int) -> list[dict]:
     for r in rows:
         program = programs.setdefault(r["program_id"], {
             "id": r["program_id"], "name": r["program_name"],
-            "start_date": r["start_date"], "end_date": r["end_date"], "days": [],
+            "start_date": r["start_date"], "end_date": r["end_date"],
+            "public": bool(r["is_public"]), "days": [],
         })
         if r["day_id"] is None:
             continue

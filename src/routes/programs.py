@@ -8,13 +8,14 @@ from ..db import Tx, query, transaction
 from ..responses import respond
 from ..rows import assert_exists, update_row
 from ..validation import (
-    optional, path_id, require_fields, to_date, to_int, to_text, validate_subsets,
+    optional, path_id, require_fields, to_bool, to_date, to_int, to_text, validate_subsets,
 )
 
 PROGRAM_FIELDS = {
     "name":       (to_text, True),
     "start_date": (to_date, False),
     "end_date":   (to_date, False),
+    "is_public":  (to_bool, True),  # visible to my friends and my coaches; private by default
 }
 
 PROGRAM_SUBSET_FIELDS = {
@@ -65,6 +66,19 @@ def list_programs(req):
         "SELECT * FROM workout.program WHERE athlete_id = :me ORDER BY id DESC",
         me=req["athlete_id"],
     )
+    # Programs a coach sent me show who sent them (None if that coach has since left).
+    senders = {r["assigned_by"] for r in rows if r["assigned_by"] is not None}
+    names = {}
+    for sender in senders:
+        found = query(
+            "SELECT username, first_name, last_name FROM workout.athlete WHERE id = :id", id=sender
+        )
+        if found:
+            f = found[0]
+            names[sender] = " ".join(p for p in (f["first_name"], f["last_name"]) if p) or f["username"]
+    for r in rows:
+        r["is_public"] = bool(r["is_public"])
+        r["assigned_by_name"] = names.get(r["assigned_by"])
     return respond(200, rows)
 
 
@@ -72,9 +86,10 @@ def create_program(req):
     body = req["body"]
     require_fields(body, "name")
     [row] = query(
-        """INSERT INTO workout.program (athlete_id, name, start_date, end_date)
-           VALUES (:me, :name, :start, :end) RETURNING *""",
+        """INSERT INTO workout.program (athlete_id, name, start_date, end_date, is_public)
+           VALUES (:me, :name, :start, :end, :public) RETURNING *""",
         me=req["athlete_id"],
+        public=optional(to_bool, body.get("is_public"), "is_public") or False,
         name=to_text(body["name"], "name"),
         start=optional(to_date, body.get("start_date"), "start_date"),
         end=optional(to_date, body.get("end_date"), "end_date"),

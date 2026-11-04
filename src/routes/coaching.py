@@ -14,8 +14,9 @@ so it can't be used to probe. An athlete who has blocked a coach (friendship sta
 
 from __future__ import annotations
 
-from ..auth import require_coach_of
+from ..auth import own_program, require_coach_of
 from ..db import Tx, query, transaction
+from ..program_copy import copy_program
 from ..responses import HttpError, respond
 from ..validation import path_id, require_fields, to_text
 from .friends import _as_athlete_entry, _created, _name_key, _public_profile
@@ -256,7 +257,7 @@ def list_athlete_programs(req):
     require_coach_of(athlete_id, req["athlete_id"])
     rows = query(
         """SELECT id, name, start_date, end_date FROM workout.program
-            WHERE athlete_id = :athlete ORDER BY id DESC""",
+            WHERE athlete_id = :athlete AND is_public = true ORDER BY id DESC""",
         athlete=athlete_id,
     )
     return respond(200, rows)
@@ -267,9 +268,48 @@ def get_athlete_program(req):
     require_coach_of(athlete_id, req["athlete_id"])
     rows = query(
         """SELECT id, name, start_date, end_date FROM workout.program
-            WHERE id = :id AND athlete_id = :athlete""",
+            WHERE id = :id AND athlete_id = :athlete AND is_public = true""",
         id=int(req["params"]["program_id"]), athlete=athlete_id,
     )
     if not rows:
         raise HttpError(404, "Program not found")
     return respond(200, _program_detail(rows[0]))
+
+
+# ---------- Sending a program ----------
+
+MAX_SEND_ATHLETES = 50
+
+
+def send_program(req):
+    """Put a copy of one of my programs into each chosen athlete's programs (id = my program).
+
+    Body: {"athlete_ids": [...]}. Only athletes I coach (accepted) can receive it; the athlete
+    needs no action. Each copy is its own transaction, so one failure never undoes the others,
+    and the answer lists the outcome per athlete. The copies are private and say who sent them.
+    The program itself can stay private: sending is not sharing.
+    """
+    me = req["athlete_id"]
+    program_id = path_id(req)
+    require_fields(req["body"], "athlete_ids")
+    raw = req["body"]["athlete_ids"]
+    if not isinstance(raw, list) or not raw or not all(isinstance(i, int) and not isinstance(i, bool) for i in raw):
+        raise HttpError(400, "athlete_ids must be a list of athlete ids")
+    athlete_ids = list(dict.fromkeys(raw))  # drop repeats, keep the order
+    if len(athlete_ids) > MAX_SEND_ATHLETES:
+        raise HttpError(400, f"At most {MAX_SEND_ATHLETES} athletes at a time")
+
+    source = own_program(program_id, me)
+    results = []
+    for athlete_id in athlete_ids:
+        def work(tx: Tx, athlete_id=athlete_id):
+            require_coach_of(athlete_id, me, tx)  # 404 unless I coach them
+            return copy_program(tx, program_id, athlete_id, source["name"], assigned_by=me)
+
+        try:
+            copy = transaction(work)
+            results.append({"athlete_id": athlete_id, "ok": True, "program_id": copy["id"]})
+        except HttpError as err:
+            results.append({"athlete_id": athlete_id, "ok": False,
+                            "error": "Not one of your athletes" if err.status == 404 else str(err)})
+    return respond(200, {"results": results})

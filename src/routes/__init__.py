@@ -47,6 +47,7 @@ _ROUTES = [
     ("GET",    "/programs/{id}",              programs.get_program),
     ("PUT",    "/programs/{id}",              programs.update_program),
     ("DELETE", "/programs/{id}",              programs.delete_program),
+    ("POST",   "/programs/{id}/send",         coaching.send_program),
     ("POST",   "/programs/{id}/days",         programs.add_program_day),
     ("PUT",    "/program-days/{id}",          programs.update_program_day),
     ("DELETE", "/program-days/{id}",          programs.delete_program_day),

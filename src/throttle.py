@@ -20,6 +20,7 @@ from .responses import HttpError
 THROTTLED = {
     ("POST", "/friend-requests"): "friend-request",
     ("POST", "/coaching-requests"): "coach-request",
+    ("POST", "/programs/{id}/send"): "program-send",
     ("POST", "/blocks"): "block",
     ("PUT", "/blocks/{id}"): "block",
     ("POST", "/exercises"): "exercise",

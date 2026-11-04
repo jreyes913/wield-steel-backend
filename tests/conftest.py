@@ -38,7 +38,7 @@ CREATE TABLE workout.exercise_set (id INTEGER PRIMARY KEY, lift_id INTEGER, posi
 CREATE TABLE workout.exercise_subset (id INTEGER PRIMARY KEY, exercise_set_id INTEGER,
   exercise_id INTEGER, position INTEGER, reps INTEGER, rir INTEGER, weight REAL);
 CREATE TABLE workout.program (id INTEGER PRIMARY KEY, athlete_id INTEGER, name TEXT,
-  start_date TEXT, end_date TEXT);
+  start_date TEXT, end_date TEXT, is_public INTEGER, assigned_by INTEGER);
 CREATE TABLE workout.program_lift (id INTEGER PRIMARY KEY, program_id INTEGER, name TEXT);
 CREATE TABLE workout.program_exercise_set (id INTEGER PRIMARY KEY, program_lift_id INTEGER, position INTEGER);
 CREATE TABLE workout.program_exercise_subset (id INTEGER PRIMARY KEY, program_exercise_set_id INTEGER,
@@ -173,9 +173,9 @@ def add_lift(user: Caller, with_body_weight=True) -> int:
     return lift["id"]
 
 
-def add_program(user: Caller, sets: int = 1) -> int:
-    """A program with one day holding `sets` sets of one subset each."""
-    code, p = user.post("/programs", {"name": "Push"})
+def add_program(user: Caller, sets: int = 1, public: bool = True) -> int:
+    """A program with one day holding `sets` sets of one subset each (public unless told otherwise)."""
+    code, p = user.post("/programs", {"name": "Push", "is_public": public})
     code, day = user.post(f"/programs/{p['id']}/days", {"name": "Day 1"})
     for i in range(sets):
         code, _ = user.post(f"/program-days/{day['id']}/sets", {
