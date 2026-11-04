@@ -15,7 +15,7 @@ import boto3
 import pg8000.native as pg
 
 from .logs import log_event
-from .config import AWS_REGION, DSQL_ENDPOINT, MAX_CONN_AGE_SECONDS, SERIALIZATION_FAILURE
+from .config import AWS_REGION, DB_SCHEMA, DSQL_ENDPOINT, MAX_CONN_AGE_SECONDS, SERIALIZATION_FAILURE
 
 _dsql = boto3.client("dsql", region_name=AWS_REGION)
 _conn: pg.Connection | None = None
@@ -95,8 +95,15 @@ def with_retry(fn: Callable[[pg.Connection], Any], attempts: int = 3) -> Any:
                 raise
 
 
+def _in_schema(sql: str) -> str:
+    """Point `workout.` at DB_SCHEMA (a no-op unless the real-DSQL tests changed it)."""
+    return sql if DB_SCHEMA == "workout" else sql.replace("workout.", f"{DB_SCHEMA}.")
+
+
 def query(sql: str, **params) -> list[dict]:
     """Run one statement and return rows as dicts. Use :name placeholders."""
+    sql = _in_schema(sql)
+
     def run(conn: pg.Connection):
         rows = conn.run(sql, **params)
         return _rows_as_dicts(conn, rows)
@@ -110,7 +117,7 @@ class Tx:
         self._conn = conn
 
     def query(self, sql: str, **params) -> list[dict]:
-        rows = self._conn.run(sql, **params)
+        rows = self._conn.run(_in_schema(sql), **params)
         return _rows_as_dicts(self._conn, rows)
 
 

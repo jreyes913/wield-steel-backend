@@ -5,14 +5,16 @@ from __future__ import annotations
 import time
 
 import boto3
+import pg8000.native as pg
 from botocore.exceptions import BotoCoreError, ClientError
 
 from ..auth import forget_athlete
 from ..cascade import delete_lift_tree, delete_program_tree
 from ..config import (
     AWS_REGION, COGNITO_USER_POOL_ID, DELETE_FRIENDSHIP_BATCH, DELETE_TIME_BUDGET_SECONDS,
+    UNDEFINED_TABLE,
 )
-from ..db import Tx, query, transaction
+from ..db import Tx, pg_code, query, transaction
 from ..responses import HttpError, respond
 from ..validation import to_text
 from .friends import _delete_row, _name_key, _others
@@ -156,6 +158,12 @@ def _delete_in_batches(me: int, deadline: float) -> bool:
 
     if time.monotonic() > deadline:
         return False
+    try:
+        # A person's attempt log (at most a few dozen rows, since old ones are purged on read).
+        query("DELETE FROM workout.rate_limit WHERE athlete_id = :me", me=me)
+    except pg.DatabaseError as err:
+        if pg_code(err) != UNDEFINED_TABLE:  # table not created yet: nothing to delete
+            raise
     query("DELETE FROM workout.athlete WHERE id = :me", me=me)
     return True
 

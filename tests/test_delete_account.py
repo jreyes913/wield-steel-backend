@@ -125,3 +125,11 @@ def test_deleted_users_token_does_not_recreate_a_profile(make_user, fake_db, sql
     # The same (still valid) token comes back after the delete.
     assert me.call("GET", "/me")[0] == 401
     assert sql("SELECT COUNT(*) AS n FROM workout.athlete WHERE cognito_sub = :s", s=me.sub)[0][0] == 0
+
+
+def test_delete_clears_the_attempt_log(make_user, sql):
+    me, other = make_user("me"), make_user("other")
+    me.post("/friend-requests", {"username": "nobody"})
+    other.post("/friend-requests", {"username": "nobody"})
+    me.delete("/me", {"confirm": "me"})
+    assert sql("SELECT athlete_id FROM workout.rate_limit") == [(other.id,)]

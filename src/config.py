@@ -5,6 +5,9 @@ import os
 DSQL_ENDPOINT = os.environ.get("DSQL_ENDPOINT", "")
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-2")
 COGNITO_USER_POOL_ID = os.environ.get("COGNITO_USER_POOL_ID", "")
+# Only the real-DSQL tests change this (tests/test_real_dsql.py): every `workout.` in a query
+# is rewritten to this schema. In the deployed Lambda it is always "workout".
+DB_SCHEMA = "workout"
 
 # Shared secret that CloudFront adds to every request it forwards (header below), so calls
 # straight to the execute-api address, which skip the WAF, can be refused. When

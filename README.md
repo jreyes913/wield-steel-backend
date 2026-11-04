@@ -114,8 +114,18 @@ python -m pytest
 The tests call the real Lambda handler against an in-memory SQLite database that stands in for
 DSQL (`tests/conftest.py` replaces only `get_conn()`), so they need no AWS access and never touch
 the `workout` schema. They cover friend access and privacy, requests and blocks, hiding lifts,
-usernames, program copy (including the 422 limit) and account export/deletion. SQLite accepts the
-plain SQL this API uses but is not DSQL: anything that depends on DSQL's own behaviour (row
-limits per transaction, query forms it rejects, real unique-violation errors) is not covered, and
-there are no tests against a scratch DSQL schema yet. `requirements-dev.txt` is not read by
+usernames, program copy (including the 422 limit) and account export/deletion. SQLite is not
+DSQL, so `tests/test_real_dsql.py` runs the main flows (profile, lifts, export, friend access,
+rate limits, program copy, account deletion, unique usernames) against a real cluster. It is
+skipped unless both variables are set:
+
+```bash
+DSQL_TEST_ENDPOINT=<staging cluster endpoint> DSQL_TEST_SCHEMA=wield_test python -m pytest tests/test_real_dsql.py
+```
+
+Use the staging cluster, never production; the run refuses the production endpoint and the name
+`workout`. It needs `aws login` credentials (it asks the AWS CLI for a DSQL token), creates the
+schema from `tests/dsql_schema.sql` on the first run, and empties its tables before each test.
+Keep `tests/dsql_schema.sql` in step with production. Row limits per transaction are still not
+tested. `requirements-dev.txt` is not read by
 `deploy.sh`, so the Lambda package is unchanged.
