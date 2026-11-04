@@ -18,7 +18,7 @@ from ..db import Tx, pg_code, query, transaction
 from ..program_copy import detach_copies_of
 from ..responses import HttpError, respond
 from ..validation import to_text
-from .coaching import _links
+from .coaching import _groups, _links
 from .friends import _delete_row, _name_key, _others
 from .profile import PROFILE_COLUMNS
 
@@ -124,6 +124,13 @@ def _coaching_links(me: int, i_am: str) -> list[dict]:
     return rows
 
 
+def _export_groups(me: int) -> list[dict]:
+    """My coaching groups with the usernames in each (they are private to me, the coach)."""
+    names = {r["id"]: r["username"] for r in _links(me, "coach", "('accepted')")}
+    return [{"name": g["name"], "athletes": sorted(names[a] for a in g["athlete_ids"] if a in names)}
+            for g in _groups(me)]
+
+
 def _usernames(rows: list[dict]) -> list[dict]:
     return [{k: r[k] for k in ("username", "first_name", "last_name")} | {"can_see_body_weight": bool(r["can_see_body_weight"])} for r in rows]
 
@@ -142,7 +149,8 @@ def export_me(req):
         "friends": friends,
         "blocked": _public_list(me, "('blocked')", "requester"),
         "coaches": _usernames(_coaching_links(me, "athlete")),
-        "coaching": _usernames(_coaching_links(me, "coach")),  # only blocks the caller made
+        "coaching": _usernames(_coaching_links(me, "coach")),
+        "coach_groups": _export_groups(me),  # only blocks the caller made
     })
 
 
@@ -195,6 +203,19 @@ def _delete_in_batches(me: int, deadline: float) -> bool:
                 )
 
         transaction(work_links)
+
+    # My groups (one transaction each, since a group can list many athletes), and any group
+    # that lists me.
+    for group in query("SELECT id FROM workout.coach_group WHERE coach_id = :me", me=me):
+        if time.monotonic() > deadline:
+            return False
+
+        def drop_group(tx: Tx, group_id=group["id"]):
+            tx.query("DELETE FROM workout.coach_group_member WHERE group_id = :g", g=group_id)
+            tx.query("DELETE FROM workout.coach_group WHERE id = :g", g=group_id)
+
+        transaction(drop_group)
+    query("DELETE FROM workout.coach_group_member WHERE athlete_id = :me", me=me)
 
     if time.monotonic() > deadline:
         return False

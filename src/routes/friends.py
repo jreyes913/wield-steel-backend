@@ -299,6 +299,11 @@ def _block(me: int, other_id: int) -> dict:
             me=me, other=other_id,
         )
         tx.query(
+            """DELETE FROM workout.coach_group_member
+                WHERE (coach_id = :me AND athlete_id = :other) OR (coach_id = :other AND athlete_id = :me)""",
+            me=me, other=other_id,
+        )
+        tx.query(
             """INSERT INTO workout.friendship
                  (requester_id, addressee_id, status, created_at, updated_at,
                   requester_hides_lifts, addressee_hides_lifts)

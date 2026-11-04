@@ -79,6 +79,16 @@ link and hides the athlete, and coach requests are rate limited. Export lists co
 and account deletion removes the rows. Create the table before deploying (DDL in
 `tests/dsql_schema.sql`).
 
+### Coach groups
+
+A coach's private groups of athletes (`workout.coach_group`, `workout.coach_group_member`; routes
+`POST /coach-groups`, `PUT`/`DELETE /coach-groups/{id}`, and `groups` in `GET /coaching`). Athletes
+never see them. Only athletes the coach coaches can be members; names are unique per coach
+(ignoring case), at most 20 groups. Membership is removed when the coaching link ends or either
+side blocks, and groups are deleted with the coach's account. Sending to a group is the frontend
+passing the group's `athlete_ids` to `POST /programs/{id}/send`. Export lists the coach's groups.
+Create the tables before deploying (DDL at the end of `tests/dsql_schema.sql`).
+
 ### Program visibility and sending
 
 `workout.program.is_public` (nullable boolean; NULL means private, because DSQL cannot add a

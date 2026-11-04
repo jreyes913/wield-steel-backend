@@ -68,6 +68,7 @@ def list_coaching(req):
         "athletes": [_entry(r, "since", r["updated_at"]) for r in coached],
         "incoming": [_entry(r, "sent_at", _created(r)) for r in incoming],
         "outgoing": [_entry(r, "sent_at", _created(r)) for r in outgoing],
+        "groups": _groups(me),
     })
 
 
@@ -204,6 +205,8 @@ def _end(coach_id: int, athlete_id: int, label: str) -> None:
             raise HttpError(404, f"{label} not found")
         tx.query("DELETE FROM workout.coaching WHERE coach_id = :coach AND athlete_id = :athlete",
                  coach=coach_id, athlete=athlete_id)
+        tx.query("DELETE FROM workout.coach_group_member WHERE coach_id = :coach AND athlete_id = :athlete",
+                 coach=coach_id, athlete=athlete_id)
 
     transaction(work)
 
@@ -331,3 +334,123 @@ def send_program(req):
             results.append({"athlete_id": athlete_id, "ok": False,
                             "error": "Not one of your athletes" if err.status == 404 else str(err)})
     return respond(200, {"results": results})
+
+
+# ---------- Groups ----------
+# A coach's private way to sort their athletes (for example "Powerlifting" or "Beginners") so a
+# program can be sent to a whole group. The athletes never see groups. An athlete can be in
+# several groups, and only athletes I coach (accepted) can be in one.
+
+MAX_GROUPS = 20
+MAX_GROUP_NAME = 40
+
+
+def _groups(me: int) -> list[dict]:
+    """My groups as {id, name, athlete_ids}, by name."""
+    groups = query("SELECT id, name FROM workout.coach_group WHERE coach_id = :me", me=me)
+    members: dict[int, list[int]] = {}
+    for r in query("SELECT group_id, athlete_id FROM workout.coach_group_member WHERE coach_id = :me", me=me):
+        members.setdefault(r["group_id"], []).append(r["athlete_id"])
+    groups.sort(key=lambda g: g["name"].lower())
+    return [{"id": g["id"], "name": g["name"], "athlete_ids": sorted(members.get(g["id"], []))} for g in groups]
+
+
+def _group_name(body: dict) -> str:
+    name = to_text(body["name"], "name")
+    if len(name) > MAX_GROUP_NAME:
+        raise HttpError(400, f"A group name can be at most {MAX_GROUP_NAME} characters")
+    return name
+
+
+def _member_ids(tx: Tx, me: int, raw) -> list[int]:
+    """Check a list of athlete ids: each must be an athlete I coach. Returns it without repeats."""
+    if not isinstance(raw, list) or not all(isinstance(i, int) and not isinstance(i, bool) for i in raw):
+        raise HttpError(400, "athlete_ids must be a list of athlete ids")
+    ids = list(dict.fromkeys(raw))
+    mine = {r["athlete_id"] for r in tx.query(
+        "SELECT athlete_id FROM workout.coaching WHERE coach_id = :me AND status = 'accepted'", me=me)}
+    if any(i not in mine for i in ids):
+        raise HttpError(400, "Groups can only hold athletes you coach")
+    return ids
+
+
+def _name_taken(tx: Tx, me: int, name: str, except_id: int | None = None) -> bool:
+    rows = tx.query(
+        "SELECT id FROM workout.coach_group WHERE coach_id = :me AND lower(name) = lower(:name)",
+        me=me, name=name,
+    )
+    return any(r["id"] != except_id for r in rows)
+
+
+def _set_members(tx: Tx, me: int, group_id: int, ids: list[int]) -> None:
+    tx.query("DELETE FROM workout.coach_group_member WHERE group_id = :g", g=group_id)
+    for athlete_id in ids:
+        tx.query(
+            "INSERT INTO workout.coach_group_member (group_id, coach_id, athlete_id) VALUES (:g, :me, :a)",
+            g=group_id, me=me, a=athlete_id,
+        )
+
+
+def create_group(req):
+    """New group; the body may also list its athlete_ids."""
+    me = req["athlete_id"]
+    body = req["body"]
+    require_fields(body, "name")
+    name = _group_name(body)
+
+    def work(tx: Tx):
+        ids = _member_ids(tx, me, body.get("athlete_ids", []))
+        if tx.query("SELECT COUNT(*) AS n FROM workout.coach_group WHERE coach_id = :me", me=me)[0]["n"] >= MAX_GROUPS:
+            raise HttpError(422, f"You can have at most {MAX_GROUPS} groups")
+        if _name_taken(tx, me, name):
+            raise HttpError(409, "You already have a group with that name")
+        [row] = tx.query(
+            "INSERT INTO workout.coach_group (coach_id, name) VALUES (:me, :name) RETURNING id",
+            me=me, name=name,
+        )
+        _set_members(tx, me, row["id"], ids)
+        return {"id": row["id"], "name": name, "athlete_ids": sorted(ids)}
+
+    return respond(201, transaction(work))
+
+
+def update_group(req):
+    """Rename a group and/or replace its athletes (send only what changed)."""
+    me = req["athlete_id"]
+    group_id = path_id(req)
+    body = req["body"]
+    if "name" not in body and "athlete_ids" not in body:
+        raise HttpError(400, "Send at least one of: name, athlete_ids")
+
+    def work(tx: Tx):
+        rows = tx.query("SELECT id, name FROM workout.coach_group WHERE id = :g AND coach_id = :me", g=group_id, me=me)
+        if not rows:
+            raise HttpError(404, "Group not found")
+        name = rows[0]["name"]
+        if "name" in body:
+            name = _group_name(body)
+            if _name_taken(tx, me, name, except_id=group_id):
+                raise HttpError(409, "You already have a group with that name")
+            tx.query("UPDATE workout.coach_group SET name = :name WHERE id = :g", name=name, g=group_id)
+        if "athlete_ids" in body:
+            _set_members(tx, me, group_id, _member_ids(tx, me, body["athlete_ids"]))
+        return {"id": group_id, "name": name,
+                "athlete_ids": sorted(r["athlete_id"] for r in tx.query(
+                    "SELECT athlete_id FROM workout.coach_group_member WHERE group_id = :g", g=group_id))}
+
+    return respond(200, transaction(work))
+
+
+def delete_group(req):
+    """Delete a group. The athletes stay; only the grouping goes."""
+    me = req["athlete_id"]
+    group_id = path_id(req)
+
+    def work(tx: Tx):
+        if not tx.query("SELECT 1 AS ok FROM workout.coach_group WHERE id = :g AND coach_id = :me", g=group_id, me=me):
+            raise HttpError(404, "Group not found")
+        tx.query("DELETE FROM workout.coach_group_member WHERE group_id = :g", g=group_id)
+        tx.query("DELETE FROM workout.coach_group WHERE id = :g", g=group_id)
+
+    transaction(work)
+    return respond(200, {"deleted": group_id})

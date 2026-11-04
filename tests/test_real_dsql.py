@@ -34,7 +34,8 @@ pytestmark = pytest.mark.skipif(
 # Children before parents, so clearing a table never trips over what points at it.
 TABLES = [
     "program_exercise_subset", "program_exercise_set", "program_lift", "program",
-    "exercise_subset", "exercise_set", "lift", "friendship", "coaching", "rate_limit",
+    "exercise_subset", "exercise_set", "lift", "friendship", "coaching", "coach_group_member",
+    "coach_group", "rate_limit",
     "athlete", "exercise", "muscle_group",
 ]
 
@@ -198,3 +199,17 @@ def test_synced_program_follows_the_coach_then_freezes(make_user, conn):
     assert kept["synced"] is False and [len(d["sets"]) for d in kept["days"]] == [3]
     assert count(conn, "program_lift") == 1  # now the athlete's, and the coach's is gone
     assert athlete.put(f"/programs/{mine}", {"is_public": True})[0] == 400
+
+
+def test_groups_membership_and_cleanup(make_user, conn):
+    coach, a1, a2 = make_user("coach"), make_user("one"), make_user("two")
+    for a in (a1, a2):
+        assert coach.post("/coaching-requests", {"username": a.username})[0] == 201
+        assert a.put(f"/coaching-requests/{coach.id}", {"status": "accepted"})[0] == 200
+    code, group = coach.post("/coach-groups", {"name": "Beginners", "athlete_ids": [a1.id, a2.id]})
+    assert code == 201 and coach.get("/coaching")[1]["groups"][0]["athlete_ids"] == sorted([a1.id, a2.id])
+    assert coach.post("/coach-groups", {"name": "beginners"})[0] == 409
+    assert coach.delete(f"/coached/{a1.id}")[0] == 200
+    assert coach.get("/coaching")[1]["groups"][0]["athlete_ids"] == [a2.id]
+    assert coach.delete("/me", {"confirm": "coach"}) == (200, {"done": True})
+    assert count(conn, "coach_group") == 0 and count(conn, "coach_group_member") == 0
