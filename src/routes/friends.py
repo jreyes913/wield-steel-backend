@@ -289,6 +289,12 @@ def _block(me: int, other_id: int) -> dict:
             if r["status"] == "blocked":
                 continue
             _delete_row(tx, r["requester_id"], r["addressee_id"])
+        # Blocking ends coaching in both directions too.
+        tx.query(
+            """DELETE FROM workout.coaching
+                WHERE (coach_id = :me AND athlete_id = :other) OR (coach_id = :other AND athlete_id = :me)""",
+            me=me, other=other_id,
+        )
         tx.query(
             """INSERT INTO workout.friendship
                  (requester_id, addressee_id, status, created_at, updated_at,

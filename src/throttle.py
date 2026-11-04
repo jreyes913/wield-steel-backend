@@ -19,6 +19,7 @@ from .responses import HttpError
 # (method, route pattern) -> action name. PUT /me counts only when it changes the username.
 THROTTLED = {
     ("POST", "/friend-requests"): "friend-request",
+    ("POST", "/coaching-requests"): "coach-request",
     ("POST", "/blocks"): "block",
     ("PUT", "/blocks/{id}"): "block",
     ("POST", "/exercises"): "exercise",

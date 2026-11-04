@@ -17,6 +17,7 @@ from ..config import (
 from ..db import Tx, pg_code, query, transaction
 from ..responses import HttpError, respond
 from ..validation import to_text
+from .coaching import _links
 from .friends import _delete_row, _name_key, _others
 from .profile import PROFILE_COLUMNS
 
@@ -110,6 +111,17 @@ def _public_list(me: int, statuses: str, i_am: str) -> list[dict]:
     return [{k: r[k] for k in ("username", "first_name", "last_name")} for r in rows]
 
 
+def _coaching_links(me: int, i_am: str) -> list[dict]:
+    """Accepted coaching links as public fields. i_am is "coach" or "athlete"."""
+    rows = _links(me, i_am, "('accepted')")
+    rows.sort(key=_name_key)
+    return rows
+
+
+def _usernames(rows: list[dict]) -> list[dict]:
+    return [{k: r[k] for k in ("username", "first_name", "last_name")} | {"can_see_body_weight": bool(r["can_see_body_weight"])} for r in rows]
+
+
 def export_me(req):
     """Everything the caller owns, as JSON. Never includes cognito_sub or internal ids of others."""
     me = req["athlete_id"]
@@ -122,7 +134,9 @@ def export_me(req):
         "lifts": _export_lifts(me),
         "programs": _export_programs(me),
         "friends": friends,
-        "blocked": _public_list(me, "('blocked')", "requester"),  # only blocks the caller made
+        "blocked": _public_list(me, "('blocked')", "requester"),
+        "coaches": _usernames(_coaching_links(me, "athlete")),
+        "coaching": _usernames(_coaching_links(me, "coach")),  # only blocks the caller made
     })
 
 
@@ -155,6 +169,24 @@ def _delete_in_batches(me: int, deadline: float) -> bool:
                 _delete_row(tx, p["requester_id"], p["addressee_id"])
 
         transaction(work)
+
+    links = query(
+        "SELECT coach_id, athlete_id FROM workout.coaching WHERE coach_id = :me OR athlete_id = :me",
+        me=me,
+    )
+    for i in range(0, len(links), DELETE_FRIENDSHIP_BATCH):
+        if time.monotonic() > deadline:
+            return False
+        batch = links[i:i + DELETE_FRIENDSHIP_BATCH]
+
+        def work_links(tx: Tx, batch=batch):
+            for p in batch:
+                tx.query(
+                    "DELETE FROM workout.coaching WHERE coach_id = :coach AND athlete_id = :athlete",
+                    coach=p["coach_id"], athlete=p["athlete_id"],
+                )
+
+        transaction(work_links)
 
     if time.monotonic() > deadline:
         return False

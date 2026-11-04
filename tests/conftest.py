@@ -46,6 +46,8 @@ CREATE TABLE workout.program_exercise_subset (id INTEGER PRIMARY KEY, program_ex
 CREATE TABLE workout.friendship (requester_id INTEGER, addressee_id INTEGER, status TEXT,
   created_at TEXT, updated_at TEXT, requester_hides_lifts INTEGER, addressee_hides_lifts INTEGER,
   PRIMARY KEY (requester_id, addressee_id));
+CREATE TABLE workout.coaching (coach_id INTEGER, athlete_id INTEGER, status TEXT,
+  can_see_body_weight INTEGER, created_at TEXT, updated_at TEXT, PRIMARY KEY (coach_id, athlete_id));
 CREATE TABLE workout.rate_limit (id INTEGER PRIMARY KEY, athlete_id INTEGER, action TEXT, created_at TEXT);
 INSERT INTO workout.muscle_group (id, name) VALUES (1, 'Chest');
 INSERT INTO workout.exercise (id, name, muscle_group_id) VALUES (1, 'Bench Press', 1);

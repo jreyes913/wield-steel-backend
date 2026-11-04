@@ -34,7 +34,7 @@ pytestmark = pytest.mark.skipif(
 # Children before parents, so clearing a table never trips over what points at it.
 TABLES = [
     "program_exercise_subset", "program_exercise_set", "program_lift", "program",
-    "exercise_subset", "exercise_set", "lift", "friendship", "rate_limit",
+    "exercise_subset", "exercise_set", "lift", "friendship", "coaching", "rate_limit",
     "athlete", "exercise", "muscle_group",
 ]
 
@@ -139,3 +139,17 @@ def test_username_is_unique(make_user):
     a, b = make_user("alice"), make_user("bobby")
     code, _ = b.put("/me", {"username": "alice"})
     assert code == 409
+
+
+def test_coaching_access_and_cleanup(make_user, conn):
+    coach, athlete = make_user("coach"), make_user("athlete")
+    lift_id = add_lift(athlete)
+    assert coach.post("/coaching-requests", {"username": "athlete"})[0] == 201
+    assert coach.get(f"/coached/{athlete.id}/lifts")[0] == 404
+    assert athlete.put(f"/coaching-requests/{coach.id}", {"status": "accepted"})[0] == 200
+    code, lift = coach.get(f"/coached/{athlete.id}/lifts/{lift_id}")
+    assert code == 200 and "body_weight" not in lift
+    assert athlete.put(f"/coaches/{coach.id}", {"can_see_body_weight": True})[0] == 200
+    assert coach.get(f"/coached/{athlete.id}/lifts")[1][0]["body_weight"] == 180
+    assert athlete.delete("/me", {"confirm": "athlete"}) == (200, {"done": True})
+    assert count(conn, "coaching") == 0

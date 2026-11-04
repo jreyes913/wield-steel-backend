@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 
-from . import account, friends, lifts, profile, programs, progress, reference
+from . import account, coaching, friends, lifts, profile, programs, progress, reference
 
 
 def _compile(pattern: str) -> re.Pattern:
@@ -70,6 +70,19 @@ _ROUTES = [
     ("GET",    "/athletes/{id}/programs",     friends.list_friend_programs),
     ("GET",    "/athletes/{id}/programs/{program_id}", friends.get_friend_program),
     ("POST",   "/athletes/{id}/programs/{program_id}/copy", friends.copy_friend_program),
+    # Coaching
+    ("GET",    "/coaching",                   coaching.list_coaching),
+    ("POST",   "/coaching-requests",          coaching.send_request),
+    ("PUT",    "/coaching-requests/{id}",     coaching.answer_request),
+    ("DELETE", "/coaching-requests/{id}",     coaching.cancel_request),
+    ("PUT",    "/coaches/{id}",               coaching.set_sharing),
+    ("DELETE", "/coaches/{id}",               coaching.remove_coach),
+    ("DELETE", "/coached/{id}",               coaching.stop_coaching),
+    ("GET",    "/coached/{id}",               coaching.get_athlete),
+    ("GET",    "/coached/{id}/lifts",         coaching.list_athlete_lifts),
+    ("GET",    "/coached/{id}/lifts/{lift_id}", coaching.get_athlete_lift),
+    ("GET",    "/coached/{id}/programs",      coaching.list_athlete_programs),
+    ("GET",    "/coached/{id}/programs/{program_id}", coaching.get_athlete_program),
     ("GET",    "/blocks",                     friends.list_blocks),
     ("POST",   "/blocks",                     friends.block_by_username),
     ("PUT",    "/blocks/{id}",                friends.block_athlete),

@@ -64,6 +64,21 @@ container holding the id of a deleted account stops writing for it within a minu
 To rotate: deploy with the new secret in `ORIGIN_SECRET` and `ORIGIN_SECRET_REQUIRED` unset,
 change the CloudFront header, then set `ORIGIN_SECRET_REQUIRED=true` again.
 
+## Coaching
+
+"Coach" is a link between two athletes, not an account type (`src/routes/coaching.py`, table
+`workout.coaching`, one row per pair: `coach_id`, `athlete_id`, `status`, `can_see_body_weight`).
+The coach asks by username (`POST /coaching-requests`), only the athlete can accept or decline
+(`PUT /coaching-requests/{coach id}`), change body-weight sharing (`PUT /coaches/{id}`) or remove
+the coach (`DELETE /coaches/{id}`); the coach can also stop (`DELETE /coached/{athlete id}`).
+`GET /coaching` lists both sides and pending requests. An accepted coach has read-only routes under
+`/coached/{athlete id}` for the profile, lifts and programs, guarded by `require_coach_of()`
+(`src/auth.py`); anything else is 404. Body weight is returned only when allowed, and never DOB,
+gender, height or `cognito_sub`. A declined request looks pending to the coach, blocking ends a
+link and hides the athlete, and coach requests are rate limited. Export lists coaches and athletes,
+and account deletion removes the rows. Create the table before deploying (DDL in
+`tests/dsql_schema.sql`).
+
 ## Limits, logging and monitoring
 
 **Rate limit table (owner runs this first).** Without it the limits are skipped (a

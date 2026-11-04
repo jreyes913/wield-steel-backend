@@ -19,6 +19,8 @@ so a user can only ever see or change their own data. Anything that isn't
 yours returns 404, so other people's IDs aren't revealed. The one exception is
 an accepted friend, who can read (never change) your programs and logged lifts,
 and sees only your name and username: never body weight or other profile fields.
+A coach you accepted (workout.coaching) has the same read-only view, plus body weight only if you
+allowed it for that coach.
 
 Endpoints
 ---------

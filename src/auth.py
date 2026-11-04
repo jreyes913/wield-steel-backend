@@ -214,3 +214,19 @@ def friend_program(program_id: int, friend_id: int, db: Tx | None = None) -> dic
             WHERE id = :id AND athlete_id = :me""",
         program_id, friend_id, "Program", db,
     )
+
+
+def require_coach_of(athlete_id: int, me: int, db: Tx | None = None) -> dict:
+    """The accepted coaching link where I coach `athlete_id`; 404 if there isn't one.
+
+    Returns {"can_see_body_weight": bool}. Pending and declined links, and asking about
+    yourself, give the same 404 as an athlete who doesn't exist.
+    """
+    rows = runner(db)(
+        """SELECT can_see_body_weight FROM workout.coaching
+            WHERE coach_id = :me AND athlete_id = :athlete AND status = 'accepted'""",
+        me=me, athlete=athlete_id,
+    )
+    if not rows:
+        raise HttpError(404, "Athlete not found")
+    return {"can_see_body_weight": bool(rows[0]["can_see_body_weight"])}

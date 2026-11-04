@@ -86,6 +86,16 @@ CREATE TABLE IF NOT EXISTS workout.program_lift (
   name text NOT NULL,
   PRIMARY KEY (id)
 );
+CREATE TABLE IF NOT EXISTS workout.coaching (
+  coach_id bigint NOT NULL,
+  athlete_id bigint NOT NULL,
+  status text NOT NULL DEFAULT 'pending',
+  can_see_body_weight boolean NOT NULL DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  PRIMARY KEY (coach_id, athlete_id),
+  CONSTRAINT coaching_check CHECK ((coach_id <> athlete_id))
+);
 CREATE TABLE IF NOT EXISTS workout.rate_limit (
   id uuid DEFAULT gen_random_uuid() NOT NULL,
   athlete_id bigint NOT NULL,
@@ -108,3 +118,4 @@ CREATE UNIQUE INDEX ASYNC IF NOT EXISTS athlete_cognito_sub_key ON workout.athle
 CREATE UNIQUE INDEX ASYNC IF NOT EXISTS athlete_username_key ON workout.athlete (username);
 CREATE INDEX ASYNC IF NOT EXISTS friendship_addressee_idx ON workout.friendship (addressee_id);
 CREATE INDEX ASYNC IF NOT EXISTS rate_limit_lookup ON workout.rate_limit (athlete_id, action, created_at);
+CREATE INDEX ASYNC IF NOT EXISTS coaching_athlete_idx ON workout.coaching (athlete_id);
